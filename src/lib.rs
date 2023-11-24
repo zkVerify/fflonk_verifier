@@ -8,15 +8,15 @@ use hash::Hasher as _;
 use utils::IntoFq as _;
 use utils::IntoFr as _;
 
-mod data;
 pub(crate) mod hash;
 mod macros;
+mod proof_input;
 pub(crate) mod utils;
 
 /// The proof data as `U256` fixed array.
-pub use data::ProofData;
+pub use proof_input::ProofData;
 /// The proof data as fixed size bytes array.
-pub use data::ProofRawData;
+pub use proof_input::ProofRawData;
 
 /// The public input data.
 pub struct Public(U256);

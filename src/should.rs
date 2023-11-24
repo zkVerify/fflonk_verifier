@@ -1,5 +1,6 @@
 use pretty_assertions::assert_eq;
 
+use rand::Rng;
 use rstest::{fixture, rstest};
 
 use crate::macros::{fr, g1, u256s};
@@ -333,4 +334,145 @@ fn compute_valid_check_paring(valid_proof: Proof, valid_pubs: Public) {
 #[rstest]
 fn verify_valid_proof(valid_proof: Proof, valid_pubs: Public) {
     assert!(valid_proof.verify(valid_pubs).is_ok())
+}
+
+mod reject {
+    use super::*;
+
+    #[derive(Debug)]
+    enum Changes {
+        C1,
+        C2,
+        W1,
+        W2,
+        Ql,
+        Qr,
+        Qm,
+        Qo,
+        Qc,
+        S1,
+        S2,
+        S3,
+        A,
+        B,
+        C,
+        Z,
+        Zw,
+        T1w,
+        T2w,
+        Inv,
+    }
+
+    #[fixture]
+    fn rng() -> impl Rng {
+        rand::thread_rng()
+    }
+
+    impl Changes {
+        fn perturbed(&self, mut proof: Proof, rng: &mut impl Rng) -> Proof {
+            let random = Fr::random(rng);
+            match self {
+                Changes::C1 => {
+                    proof.c1 = proof.c1 * random;
+                }
+                Changes::C2 => {
+                    proof.c2 = proof.c2 * random;
+                }
+                Changes::W1 => {
+                    proof.w1 = proof.w1 * random;
+                }
+                Changes::W2 => {
+                    proof.w2 = proof.w2 * random;
+                }
+                Changes::Ql => {
+                    proof.ql = random;
+                }
+                Changes::Qr => {
+                    proof.qr = random;
+                }
+                Changes::Qm => {
+                    proof.qm = random;
+                }
+                Changes::Qo => {
+                    proof.qo = random;
+                }
+                Changes::Qc => {
+                    proof.qc = random;
+                }
+                Changes::S1 => {
+                    proof.s1 = random;
+                }
+                Changes::S2 => {
+                    proof.s2 = random;
+                }
+                Changes::S3 => {
+                    proof.s3 = random;
+                }
+                Changes::A => {
+                    proof.a = random;
+                }
+                Changes::B => {
+                    proof.b = random;
+                }
+                Changes::C => {
+                    proof.c = random;
+                }
+                Changes::Z => {
+                    proof.z = random;
+                }
+                Changes::Zw => {
+                    proof.zw = random;
+                }
+                Changes::T1w => {
+                    proof.t1w = random;
+                }
+                Changes::T2w => {
+                    proof.t2w = random;
+                }
+                Changes::Inv => {
+                    proof.inv = random;
+                }
+            }
+            proof
+        }
+    }
+    use Changes::*;
+
+    #[rstest]
+    fn an_invalid_proof(
+        mut rng: impl Rng,
+        valid_proof: Proof,
+        valid_pubs: Public,
+        #[values(
+            C1, C2, W1, W2, Ql, Qr, Qm, Qo, Qc, S1, S2, S3, A, B, C, Z, Zw, T1w, T2w, Inv
+        )]
+        change: Changes,
+    ) {
+        let perturbed_proof = change.perturbed(valid_proof, &mut rng);
+        assert!(perturbed_proof.verify(valid_pubs).is_err())
+    }
+
+    #[rstest]
+    fn an_invalid_public_input(mut rng: impl Rng, valid_proof: Proof) {
+        assert!(valid_proof
+            .verify(
+                U256::random(
+                    &mut rng,
+                    &u256!("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+                )
+                .into()
+            )
+            .is_err())
+    }
+
+    #[rstest]
+    #[should_panic(expected = "InvalidInverse")]
+    fn an_invalid_inverse(
+        mut rng: impl Rng,
+        #[from(valid_proof)] mut proof: Proof,
+        valid_pubs: Public,
+    ) {
+        proof.inv = Fr::random(&mut rng);
+        proof.verify(valid_pubs).unwrap()
+    }
 }
