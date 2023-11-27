@@ -140,8 +140,8 @@ impl ProofFields {
 }
 
 fn read_g1(field: ProofFields, data: &[U256]) -> Result<G1, ProofDataError> {
-    let x = read_fq(&field.x_str(), data[0])?;
-    let y = read_fq(&field.y_str(), data[1])?;
+    let x = read_fq(field.x_str(), data[0])?;
+    let y = read_fq(field.y_str(), data[1])?;
     AffineG1::new(x, y)
         .map_err(|e| ProofDataError::InvalidGroup {
             field: field.str(),
