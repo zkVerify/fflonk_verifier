@@ -4,35 +4,32 @@ pub(crate) trait Hasher {
     fn hash(&self) -> [u8; 32];
 }
 
-impl Hasher for &[u8] {
+impl Hasher for [u8] {
     fn hash(&self) -> [u8; 32] {
         use digest::Digest;
-        sha3::Keccak256::digest(*self).into()
+        sha3::Keccak256::digest(self).into()
     }
 }
 
+const MAX_HASH_LEN: usize = 25;
+
 impl Hasher for &[U256] {
     fn hash(&self) -> [u8; 32] {
-        let mut buffer = Vec::<u8>::with_capacity(self.len() * 32);
-        for d in *self {
-            let mut inner = [0; 32];
-            d.to_big_endian(&mut inner)
-                .expect("BUG: should never fails!");
-            buffer.extend_from_slice(&inner);
+        if self.len() > MAX_HASH_LEN {
+            panic!("Too many elements in hasher");
         }
-        buffer.as_slice().hash()
+        let mut buffer = [0_u8; MAX_HASH_LEN * 32];
+        for (pos, d) in self.iter().enumerate() {
+            d.to_big_endian(&mut buffer[pos * 32..(pos + 1) * 32])
+                .expect("BUG: should never fails!");
+        }
+        buffer[0..self.len() * 32].hash()
     }
 }
 
 impl Hasher for [U256] {
     fn hash(&self) -> [u8; 32] {
         (&self).hash()
-    }
-}
-
-impl Hasher for Vec<U256> {
-    fn hash(&self) -> [u8; 32] {
-        self.as_slice().hash()
     }
 }
 
@@ -54,10 +51,12 @@ mod tests {
     vec![u256!("290decd9548b62a8d60345a988386fc84ba6bc95484008f6362f93160ef3e563"), U256::zero(), u256!("20aa000426f73d95c72abaf47f289e50874dd894230eee8e3e67ccc2a42d61d8")])]
     fn generate_valid_hash_against_the_one_used_in_the_solidity_impl(
         #[case] expected: U256,
-        #[case] input: impl Hasher,
+        #[case] input: Vec<U256>,
     ) {
         // All challenges are corrected to be Fr element (computed a module)
-        let u256 = U256::from_slice(&input.hash()).unwrap().fr_module();
+        let u256 = U256::from_slice(&input.as_slice().hash())
+            .unwrap()
+            .fr_module();
         assert_eq!(expected, u256)
     }
 }

@@ -339,104 +339,80 @@ fn verify_valid_proof(valid_proof: Proof, valid_pubs: Public) {
 mod reject {
     use super::*;
 
-    #[derive(Debug)]
-    enum Changes {
-        C1,
-        C2,
-        W1,
-        W2,
-        Ql,
-        Qr,
-        Qm,
-        Qo,
-        Qc,
-        S1,
-        S2,
-        S3,
-        A,
-        B,
-        C,
-        Z,
-        Zw,
-        T1w,
-        T2w,
-        Inv,
-    }
-
     #[fixture]
     fn rng() -> impl Rng {
         rand::thread_rng()
     }
 
-    impl Changes {
+    impl ProofFields {
         fn perturbed(&self, mut proof: Proof, rng: &mut impl Rng) -> Proof {
             let random = Fr::random(rng);
             match self {
-                Changes::C1 => {
+                ProofFields::C1 => {
                     proof.c1 = proof.c1 * random;
                 }
-                Changes::C2 => {
+                ProofFields::C2 => {
                     proof.c2 = proof.c2 * random;
                 }
-                Changes::W1 => {
+                ProofFields::W1 => {
                     proof.w1 = proof.w1 * random;
                 }
-                Changes::W2 => {
+                ProofFields::W2 => {
                     proof.w2 = proof.w2 * random;
                 }
-                Changes::Ql => {
+                ProofFields::Ql => {
                     proof.ql = random;
                 }
-                Changes::Qr => {
+                ProofFields::Qr => {
                     proof.qr = random;
                 }
-                Changes::Qm => {
+                ProofFields::Qm => {
                     proof.qm = random;
                 }
-                Changes::Qo => {
+                ProofFields::Qo => {
                     proof.qo = random;
                 }
-                Changes::Qc => {
+                ProofFields::Qc => {
                     proof.qc = random;
                 }
-                Changes::S1 => {
+                ProofFields::S1 => {
                     proof.s1 = random;
                 }
-                Changes::S2 => {
+                ProofFields::S2 => {
                     proof.s2 = random;
                 }
-                Changes::S3 => {
+                ProofFields::S3 => {
                     proof.s3 = random;
                 }
-                Changes::A => {
+                ProofFields::A => {
                     proof.a = random;
                 }
-                Changes::B => {
+                ProofFields::B => {
                     proof.b = random;
                 }
-                Changes::C => {
+                ProofFields::C => {
                     proof.c = random;
                 }
-                Changes::Z => {
+                ProofFields::Z => {
                     proof.z = random;
                 }
-                Changes::Zw => {
+                ProofFields::Zw => {
                     proof.zw = random;
                 }
-                Changes::T1w => {
+                ProofFields::T1w => {
                     proof.t1w = random;
                 }
-                Changes::T2w => {
+                ProofFields::T2w => {
                     proof.t2w = random;
                 }
-                Changes::Inv => {
+                ProofFields::Inv => {
                     proof.inv = random;
                 }
             }
             proof
         }
     }
-    use Changes::*;
+    use ProofFields::*;
 
     #[rstest]
     fn an_invalid_proof(
@@ -446,7 +422,7 @@ mod reject {
         #[values(
             C1, C2, W1, W2, Ql, Qr, Qm, Qo, Qc, S1, S2, S3, A, B, C, Z, Zw, T1w, T2w, Inv
         )]
-        change: Changes,
+        change: ProofFields,
     ) {
         let perturbed_proof = change.perturbed(valid_proof, &mut rng);
         assert!(perturbed_proof.verify(valid_pubs).is_err())

@@ -1,44 +1,51 @@
+use snafu::Snafu;
 use substrate_bn::{arith::U256, AffineG1, FieldError, Fq, Fr, GroupError, G1};
-use thiserror::Error;
 
-use crate::Proof;
+use crate::{Proof, ProofFields};
 
 pub type ProofData = [U256; 24];
 pub type ProofRawData = [u8; 32 * 24];
 
-#[derive(Error, Debug)]
+#[derive(Snafu, Debug)]
 pub enum ProofDataError {
-    #[error("Invalid field proof data '{field}': {error:?}")]
-    InvalidField { field: String, error: FieldError },
-    #[error("Invalid point proof data '{field}': {error:?}")]
-    InvalidGroup { field: String, error: GroupError },
+    #[snafu(display("Invalid field proof data '{field}': {error:?}"))]
+    InvalidField {
+        field: &'static str,
+        error: FieldError,
+    },
+    #[snafu(display("Invalid point proof data '{field}': {error:?}"))]
+    InvalidGroup {
+        field: &'static str,
+        error: GroupError,
+    },
 }
 
 impl TryFrom<&ProofData> for Proof {
     type Error = ProofDataError;
 
     fn try_from(data: &ProofData) -> Result<Self, Self::Error> {
+        use ProofFields::*;
         Ok(Self {
-            c1: read_g1("c1", &data[..2])?,
-            c2: read_g1("c2", &data[2..4])?,
-            w1: read_g1("w1", &data[4..6])?,
-            w2: read_g1("w2", &data[6..8])?,
-            ql: read_fr("q1", data[8])?,
-            qr: read_fr("qr", data[9])?,
-            qm: read_fr("qm", data[10])?,
-            qo: read_fr("qo", data[11])?,
-            qc: read_fr("qc", data[12])?,
-            s1: read_fr("s1", data[13])?,
-            s2: read_fr("s2", data[14])?,
-            s3: read_fr("s3", data[15])?,
-            a: read_fr("a", data[16])?,
-            b: read_fr("b", data[17])?,
-            c: read_fr("c", data[18])?,
-            z: read_fr("z", data[19])?,
-            zw: read_fr("zw", data[20])?,
-            t1w: read_fr("t1w", data[21])?,
-            t2w: read_fr("t2w", data[22])?,
-            inv: read_fr("inv", data[23])?,
+            c1: read_g1(C1, &data[..2])?,
+            c2: read_g1(C2, &data[2..4])?,
+            w1: read_g1(W1, &data[4..6])?,
+            w2: read_g1(W2, &data[6..8])?,
+            ql: read_fr(Ql, data[8])?,
+            qr: read_fr(Qr, data[9])?,
+            qm: read_fr(Qm, data[10])?,
+            qo: read_fr(Qo, data[11])?,
+            qc: read_fr(Qc, data[12])?,
+            s1: read_fr(S1, data[13])?,
+            s2: read_fr(S2, data[14])?,
+            s3: read_fr(S3, data[15])?,
+            a: read_fr(A, data[16])?,
+            b: read_fr(B, data[17])?,
+            c: read_fr(C, data[18])?,
+            z: read_fr(Z, data[19])?,
+            zw: read_fr(Zw, data[20])?,
+            t1w: read_fr(T1w, data[21])?,
+            t2w: read_fr(T2w, data[22])?,
+            inv: read_fr(Inv, data[23])?,
         })
     }
 }
@@ -85,27 +92,74 @@ impl TryFrom<&ProofRawData> for Proof {
     }
 }
 
-fn read_g1(field: &str, data: &[U256]) -> Result<G1, ProofDataError> {
-    let x = read_fq(&format!("{field}.x"), data[0])?;
-    let y = read_fq(&format!("{field}.y"), data[1])?;
+impl ProofFields {
+    fn str(&self) -> &'static str {
+        match self {
+            ProofFields::C1 => "c1",
+            ProofFields::C2 => "c2",
+            ProofFields::W1 => "w1",
+            ProofFields::W2 => "w2",
+            ProofFields::Ql => "ql",
+            ProofFields::Qr => "qr",
+            ProofFields::Qm => "qm",
+            ProofFields::Qo => "qo",
+            ProofFields::Qc => "qc",
+            ProofFields::S1 => "s1",
+            ProofFields::S2 => "s2",
+            ProofFields::S3 => "s3",
+            ProofFields::A => "a",
+            ProofFields::B => "b",
+            ProofFields::C => "c",
+            ProofFields::Z => "z",
+            ProofFields::Zw => "zw",
+            ProofFields::T1w => "t1w",
+            ProofFields::T2w => "t2w",
+            ProofFields::Inv => "inv",
+        }
+    }
+
+    fn x_str(&self) -> &'static str {
+        match self {
+            ProofFields::C1 => "c1.x",
+            ProofFields::C2 => "c2.x",
+            ProofFields::W1 => "w1.x",
+            ProofFields::W2 => "w2.x",
+            _ => "__undefined__x__",
+        }
+    }
+
+    fn y_str(&self) -> &'static str {
+        match self {
+            ProofFields::C1 => "c1.y",
+            ProofFields::C2 => "c2.y",
+            ProofFields::W1 => "w1.y",
+            ProofFields::W2 => "w2.y",
+            _ => "__undefined__y__",
+        }
+    }
+}
+
+fn read_g1(field: ProofFields, data: &[U256]) -> Result<G1, ProofDataError> {
+    let x = read_fq(&field.x_str(), data[0])?;
+    let y = read_fq(&field.y_str(), data[1])?;
     AffineG1::new(x, y)
         .map_err(|e| ProofDataError::InvalidGroup {
-            field: field.to_string(),
+            field: field.str(),
             error: e,
         })
         .map(Into::into)
 }
 
-fn read_fq(field: &str, data: U256) -> Result<Fq, ProofDataError> {
+fn read_fq(addr: &'static str, data: U256) -> Result<Fq, ProofDataError> {
     Fq::from_u256(data).map_err(|e| ProofDataError::InvalidField {
-        field: field.to_string(),
+        field: addr,
         error: e,
     })
 }
 
-fn read_fr(field: &str, data: U256) -> Result<Fr, ProofDataError> {
+fn read_fr(field: ProofFields, data: U256) -> Result<Fr, ProofDataError> {
     Fr::new(data).ok_or_else(|| ProofDataError::InvalidField {
-        field: field.to_string(),
+        field: field.str(),
         error: FieldError::NotMember,
     })
 }
@@ -189,7 +243,7 @@ mod tests {
     #[case::invalid_curve(0, U256::from(0))]
     #[should_panic(expected = r#""w2.y", error: NotMember"#)]
     #[case::invalid_field_curve(7, u256!("fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0"))]
-    #[should_panic(expected = r#""q1", error: NotMember"#)]
+    #[should_panic(expected = r#""ql", error: NotMember"#)]
     #[case::invalid_field_edge_case(8, u256!("30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001"))]
     #[case::valid_field_edge_case(8, u256!("30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000"))]
     fn reject_invalid_proof_data(#[case] id: usize, #[case] value: U256) {

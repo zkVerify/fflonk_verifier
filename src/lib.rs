@@ -1,8 +1,9 @@
+#![cfg_attr(not(feature = "std"), no_std)]
 #![doc = include_str!("../README.md")]
 
 use macros::u256;
+use snafu::Snafu;
 use substrate_bn::{arith::U256, pairing_batch, AffineG1, AffineG2, Fq, Fq2, Fr, Gt, G1, G2};
-use thiserror::Error;
 
 use hash::Hasher as _;
 use utils::IntoFq as _;
@@ -34,11 +35,35 @@ impl From<[u8; 32]> for Public {
 }
 
 impl TryFrom<&[u8]> for Public {
-    type Error = std::array::TryFromSliceError;
+    type Error = core::array::TryFromSliceError;
 
     fn try_from(inner: &[u8]) -> Result<Self, Self::Error> {
         <[u8; 32]>::try_from(inner).map(Into::into)
     }
+}
+
+#[derive(Debug)]
+enum ProofFields {
+    C1,
+    C2,
+    W1,
+    W2,
+    Ql,
+    Qr,
+    Qm,
+    Qo,
+    Qc,
+    S1,
+    S2,
+    S3,
+    A,
+    B,
+    C,
+    Z,
+    Zw,
+    T1w,
+    T2w,
+    Inv,
 }
 
 /// The Proof data: use the implemented conversion traits `TryFrom` to build it.
@@ -232,13 +257,15 @@ impl Proof {
 }
 
 /// Verification Error
-#[derive(Error, Debug)]
+#[derive(Snafu, Debug)]
 pub enum VerifyError {
     /// The provided inverse is wrong
-    #[error("Invalid provided inverse is {inverse:?} that's not the inverse of {computed:?}")]
+    #[snafu(display(
+        "Invalid provided inverse is {inverse:?} that's not the inverse of {computed:?}"
+    ))]
     InvalidInverse { inverse: Fr, computed: Fr },
     /// Cannot verify the pairing for this proof
-    #[error("Cannot verify paring")]
+    #[snafu(display("Cannot verify paring"))]
     NotPairing,
 }
 
