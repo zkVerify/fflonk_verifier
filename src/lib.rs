@@ -120,23 +120,13 @@ impl Proof {
     fn compute_r0(&self, challenges: &Challenges, li_s0_inv: &LiS0) -> Fr {
         let base = challenges.y.pow(8_u64.into_fr()) - challenges.xi;
 
-        let mut res = Fr::zero();
-        let constants = [
+        let coefficients = [
             self.ql, self.qr, self.qo, self.qm, self.qc, self.s1, self.s2, self.s3,
         ];
 
         // Compute c0Value = ql + (h0w8[i]) qr + (h0w8[i])^2 qo + (h0w8[i])^3 qm + (h0w8[i])^4 qc +
         //                      + (h0w8[i])^5 S1 + (h0w8[i])^6 S2 + (h0w8[i])^7 S3
-        for (i, root) in challenges.h0_w8.iter().enumerate() {
-            let mut h = Fr::one();
-            let mut c0_value = Fr::zero();
-            for c in &constants {
-                c0_value = c0_value + (*c) * h;
-                h = h * *root;
-            }
-            res = res + c0_value * base * li_s0_inv[i];
-        }
-        res
+        polynomial_eval(base, &coefficients, &challenges.h0_w8, li_s0_inv, None)
     }
 
     /// Compute r1(y) by interpolating the polynomial r1(X) using 4 points (x,y)
@@ -146,7 +136,6 @@ impl Proof {
     fn compute_r1(&self, challenges: &Challenges, pi: Fr, zh_inv: Fr, li_s1_inv: &LiS1) -> Fr {
         let base = challenges.y.pow(4_u64.into_fr()) - challenges.xi;
 
-        let mut res = Fr::zero();
         let t0 = ((self.ql * self.a)
             + (self.qr * self.b)
             + (self.qm * self.a * self.b)
@@ -154,18 +143,9 @@ impl Proof {
             + self.qc
             + pi)
             * zh_inv;
-        let constants = [self.a, self.b, self.c, t0];
+        let coefficients = [self.a, self.b, self.c, t0];
 
-        for (i, root) in challenges.h1_w4.iter().enumerate() {
-            let mut h = Fr::one();
-            let mut c1_value = Fr::zero();
-            for c in &constants {
-                c1_value = c1_value + (*c) * h;
-                h = h * *root;
-            }
-            res = res + c1_value * base * li_s1_inv[i];
-        }
-        res
+        polynomial_eval(base, &coefficients, &challenges.h1_w4, li_s1_inv, None)
     }
 
     /// Compute r2(y) by interpolating the polynomial r2(X) using 6 points (x,y)
@@ -177,7 +157,6 @@ impl Proof {
             - (challenges.y.pow(3_u64.into_fr()) * challenges.xi * (Fr::one() + Challenges::w1()))
             + (challenges.xi * challenges.xi * Challenges::w1());
 
-        let mut gamma = Fr::zero();
         let beta_xi = challenges.beta * challenges.xi;
         let t1 = (self.z - Fr::one()) * l1 * zh_inv;
         let t2 = (((self.a + beta_xi + challenges.gamma)
@@ -190,28 +169,23 @@ impl Proof {
                 * self.zw))
             * zh_inv;
 
-        let constants = [self.z, t1, t2];
-        for (i, root) in challenges.h2_w3.iter().enumerate() {
-            let mut h = Fr::one();
-            let mut c2_value = Fr::zero();
-            for c in &constants {
-                c2_value = c2_value + (*c) * h;
-                h = h * *root;
-            }
-            gamma = gamma + c2_value * base * li_s2_inv[i];
-        }
+        let coefficients = [self.z, t1, t2];
+        let gamma = polynomial_eval(
+            base,
+            &coefficients,
+            &challenges.h2_w3,
+            &li_s2_inv[..3],
+            None,
+        );
 
-        let constants = [self.zw, self.t1w, self.t2w];
-        for (i, root) in challenges.h3_w3.iter().enumerate() {
-            let mut h = Fr::one();
-            let mut c2_value = Fr::zero();
-            for c in &constants {
-                c2_value = c2_value + (*c) * h;
-                h = h * *root;
-            }
-            gamma = gamma + c2_value * base * li_s2_inv[3 + i];
-        }
-        gamma
+        let coefficients = [self.zw, self.t1w, self.t2w];
+        polynomial_eval(
+            base,
+            &coefficients,
+            &challenges.h3_w3,
+            &li_s2_inv[3..],
+            Some(gamma),
+        )
     }
 
     fn compute_fej(
@@ -254,6 +228,26 @@ impl Proof {
             Err(VerifyError::NotPairing)
         }
     }
+}
+
+fn polynomial_eval(
+    base: Fr,
+    coefficients: &[Fr],
+    challenges: &[Fr],
+    inv: &[Fr],
+    acc: Option<Fr>,
+) -> Fr {
+    let mut acc = acc.unwrap_or(Fr::zero());
+    for (i, root) in challenges.iter().enumerate() {
+        let mut h = Fr::one();
+        let mut c1_value = Fr::zero();
+        for c in coefficients {
+            c1_value = c1_value + (*c) * h;
+            h = h * *root;
+        }
+        acc = acc + c1_value * base * inv[i];
+    }
+    acc
 }
 
 /// Verification Error
@@ -484,25 +478,26 @@ impl Challenges {
         data[0] = self.zh;
         data[1] = data[0] * den_h1_base;
         data[2] = data[1] * den_h2_base;
+        let mut cursor = 3;
         let li_s0 = self.compute_li_s0();
-        for (pos, elem) in li_s0.iter().enumerate() {
-            let index = 3 + pos - 1;
-            data[index + 1] = data[index] * *elem;
+        for elem in li_s0 {
+            data[cursor] = data[cursor - 1] * elem;
+            cursor += 1;
         }
         let li_s1 = self.compute_li_s1();
-        for (pos, elem) in li_s1.iter().enumerate() {
-            let index = 3 + 8 + pos - 1;
-            data[index + 1] = data[index] * *elem;
+        for elem in li_s1 {
+            data[cursor] = data[cursor - 1] * elem;
+            cursor += 1;
         }
         let li_s2 = self.compute_li_s2();
-        for (pos, elem) in li_s2.iter().enumerate() {
-            let index = 3 + 8 + 4 + pos - 1;
-            data[index + 1] = data[index] * *elem;
+        for elem in li_s2 {
+            data[cursor] = data[cursor - 1] * elem;
+            cursor += 1;
         }
 
         let eval_l1_base = self.compute_eval_l1_base();
-        data[3 + 8 + 4 + 6] = data[3 + 8 + 4 + 6 - 1] * eval_l1_base;
-        let value = data[3 + 8 + 4 + 6];
+        data[cursor] = data[cursor - 1] * eval_l1_base;
+        let value = data[cursor];
 
         if Fr::one() != value * expected {
             return Err(VerifyError::InvalidInverse {
@@ -510,8 +505,8 @@ impl Challenges {
                 computed: value,
             });
         }
-        let mut cursor = 3 + 8 + 4 + 6 - 1;
-        data[cursor + 1] = expected;
+        data[cursor] = expected;
+        cursor -= 1;
         // We get l1 from batches and we compute the polynomial evaluation L1(x)
         let l1 = data[cursor + 1] * data[cursor] * self.zh;
         data[cursor] = data[cursor + 1] * eval_l1_base;
@@ -535,10 +530,10 @@ impl Challenges {
             cursor -= 1;
         }
         let den_h2 = data[cursor + 1] * data[cursor];
-        data[cursor] = data[cursor + 1] * self.compute_den_h2_base();
+        data[cursor] = data[cursor + 1] * den_h2_base;
         cursor -= 1;
         let den_h1 = data[cursor + 1] * data[cursor];
-        data[cursor] = data[cursor + 1] * self.compute_den_h1_base();
+        data[cursor] = data[cursor + 1] * den_h1_base;
         let zh_inv = data[cursor];
         Ok((
             Inverse {

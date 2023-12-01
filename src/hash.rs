@@ -35,7 +35,10 @@ impl Hasher for [U256] {
 
 #[cfg(test)]
 mod tests {
-    use crate::{macros::u256, utils::FrModule};
+    use crate::{
+        macros::{fr, u256},
+        utils::IntoFr,
+    };
     use rstest::rstest;
 
     use super::*;
@@ -47,20 +50,19 @@ mod tests {
     }
 
     #[rstest]
-    #[case::zero(u256!("290decd9548b62a8d60345a988386fc84ba6bc95484008f6362f93160ef3e563"), [U256::zero()])]
-    #[case::zero_of_zero(u256!("20aa000426f73d95c72abaf47f289e50874dd894230eee8e3e67ccc2a42d61d8"), [u256!("290decd9548b62a8d60345a988386fc84ba6bc95484008f6362f93160ef3e563")])]
-    #[case::zero_zero(u256!("1c053d5dd362f3501993d420ba93e87eb29b2bb845ddeefe74b26929c7ba5fb2"), [U256::zero(), U256::zero()])]
-    #[case::zero_zero_zero(u256!("160bbcda5f7abc0bf6dbdd2720f72234c32292be4f6b386a4707aac730c08c20"), [U256::zero(), U256::zero(), U256::zero()])]
-    #[case::some_u256(u256!("07d87f7eed9223d1a55da14bb15eb643a549958a8e4006dba9367247b039b571"), 
+    #[case::zero(fr!("290decd9548b62a8d60345a988386fc84ba6bc95484008f6362f93160ef3e563"), [U256::zero()])]
+    #[case::zero_of_zero(fr!("20aa000426f73d95c72abaf47f289e50874dd894230eee8e3e67ccc2a42d61d8"), [u256!("290decd9548b62a8d60345a988386fc84ba6bc95484008f6362f93160ef3e563")])]
+    #[case::zero_zero(fr!("1c053d5dd362f3501993d420ba93e87eb29b2bb845ddeefe74b26929c7ba5fb2"), [U256::zero(), U256::zero()])]
+    #[case::zero_zero_zero(fr!("160bbcda5f7abc0bf6dbdd2720f72234c32292be4f6b386a4707aac730c08c20"), [U256::zero(), U256::zero(), U256::zero()])]
+    #[case::some_u256(fr!("07d87f7eed9223d1a55da14bb15eb643a549958a8e4006dba9367247b039b571"), 
     [u256!("290decd9548b62a8d60345a988386fc84ba6bc95484008f6362f93160ef3e563"), U256::zero()])]
-    #[case::some_u256(u256!("189b3f9023ec42435ff11d489e03af64b7632d6c8e6e413a504ae617e1282d97"), 
+    #[case::some_u256(fr!("189b3f9023ec42435ff11d489e03af64b7632d6c8e6e413a504ae617e1282d97"), 
     [u256!("290decd9548b62a8d60345a988386fc84ba6bc95484008f6362f93160ef3e563"), U256::zero(), u256!("20aa000426f73d95c72abaf47f289e50874dd894230eee8e3e67ccc2a42d61d8")])]
     fn generate_valid_hash_against_the_one_used_in_the_solidity_impl(
-        #[case] expected: U256,
+        #[case] expected: substrate_bn::Fr,
         #[case] input: impl Hasher,
     ) {
         // All challenges are corrected to be Fr element (computed a module)
-        let u256 = U256::from_slice(&input.hash()).unwrap().fr_module();
-        assert_eq!(expected, u256)
+        assert_eq!(expected, input.hash().into_fr())
     }
 }
