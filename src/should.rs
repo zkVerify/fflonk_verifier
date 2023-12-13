@@ -82,7 +82,7 @@ impl TestCase for AdditionalValidTestCase {
     ];
 
     const PUBS: U256 = u256!("0d48225cca2578cfab88b55e6ce0193f454af85e1ddf3fdf74492f1838a3f9b3");
-} 
+}
 
 #[fixture]
 fn valid_proof() -> Proof {
