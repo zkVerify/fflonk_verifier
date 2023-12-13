@@ -6,7 +6,7 @@ bits integers) and the expected public input is 32 bytes (a big-endian unsigned 
 the proof and public input from the raw bytes you can use the implemented `TryFrom` trait.
 
 The solidity reference implementation from Polygon
-[is in solidity](https://github.com/0xPolygonHermez/zkevm-contracts/blob/53e95f3a236d8bea87c27cb8714a5d21496a3b20/contracts/verifiers/FflonkVerifier.sol)
+[is in solidity](https://github.com/0xPolygon/cdk-validium-contracts/blob/cecd53e0b1e39cd9df1a79215eedbbb636b4e0a7/contracts/verifiers/FflonkVerifier.sol)
 
 
 ## Usage
