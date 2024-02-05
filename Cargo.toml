@@ -16,6 +16,11 @@ pretty_assertions = "1.4.0"
 rstest = { version = "0.18.2", default-features = false }
 hex-literal = "0.4.1"
 rand = "0.8.5"
+divan = "0.1.11"
+
+[[bench]]
+name = "base"
+harness = false
 
 [features]
 default = ["std"]
