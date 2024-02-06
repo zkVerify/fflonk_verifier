@@ -32,21 +32,6 @@ macro_rules! u256s {
 #[cfg(test)]
 pub(crate) use u256s;
 
-#[cfg(test)]
-macro_rules! g1 {
-    ($s1:literal, $s2:literal) => {{
-        use $crate::macros::u256;
-        AffineG1::new(
-            Fq::from_u256(u256!($s1)).unwrap(),
-            Fq::from_u256(u256!($s2)).unwrap(),
-        )
-        .unwrap()
-        .into()
-    }};
-}
-#[cfg(test)]
-pub(crate) use g1;
-
 const fn next_hex_char(string: &[u8], mut pos: usize) -> Option<(u8, usize)> {
     while pos < string.len() {
         let raw_val = string[pos];
