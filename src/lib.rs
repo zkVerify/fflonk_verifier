@@ -278,8 +278,8 @@ trait Constants {
         3.into_fr()
     }
 
-    const C0X: U256 = u256!("16d70f6937b88ea2890451712281f2073db9ac923d49d38d833cbbcbc2b281c8");
-    const C0Y: U256 = u256!("1f7e1d70965392e542392cab2e10e88c03912b89107ae96c3a6b13f31f3a4cd0");
+    const C0X: U256 = u256!("10711a639fed66ba6cd6001188b8fe7285cb9bd01afc1f90598223550aa57e36");
+    const C0Y: U256 = u256!("28c937a4cb758326763015d30fff3568f5cbed932cdc7c411a435d3de04549ef");
     fn f() -> G1 {
         let x = Fq::from_u256(Self::C0X).expect("C0x should be a valid Fq point");
         let y = Fq::from_u256(Self::C0Y).expect("C0y should be a valid Fq point");
