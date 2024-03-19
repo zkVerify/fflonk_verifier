@@ -19,19 +19,20 @@ fn main() {
     divan::main();
 }
 
-use fflonk_verifier::Proof;
+use fflonk_verifier::{verify, AugmentedVerificationKey, Proof};
 use hex_literal::hex;
 
 // Define a `fibonacci` function and register it for benchmarking.
 #[divan::bench]
 fn fflonk_verifier() -> bool {
-    fn compute(data: [u8; 768], pubs: [u8; 32]) -> bool {
+    fn compute(vk: AugmentedVerificationKey, data: [u8; 768], pubs: [u8; 32]) -> bool {
         let proof = Proof::try_from(&data).unwrap();
         let pubs = pubs.into();
 
-        proof.verify(pubs).is_ok()
+        verify(&vk, &proof, &pubs).is_ok()
     }
 
+    let vk = AugmentedVerificationKey::default();
     let data = hex!(
         r#"
         283e3f25323d02dabdb94a897dc2697a3b930d8781381ec574af89a201a91d5a
@@ -62,5 +63,9 @@ fn fflonk_verifier() -> bool {
     );
     let pubs = hex!("0d69b94acdfaca5bacc248a60b35b925a2374644ce0c1205db68228c8921d9d9");
 
-    compute(divan::black_box(data), divan::black_box(pubs))
+    compute(
+        divan::black_box(vk),
+        divan::black_box(data),
+        divan::black_box(pubs),
+    )
 }

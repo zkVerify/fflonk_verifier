@@ -14,11 +14,12 @@
 // You should have received a copy of the GNU General Public License
 // along with fflonk_verifier.  If not, see <http://www.gnu.org/licenses/>.
 
-use fflonk_verifier::Proof;
+use fflonk_verifier::{verify, AugmentedVerificationKey, Proof};
 use hex_literal::hex;
 
 #[test]
 fn should_verify_valid_proof() {
+    let key = AugmentedVerificationKey::default();
     let data = hex!(
         r#"
         283e3f25323d02dabdb94a897dc2697a3b930d8781381ec574af89a201a91d5a
@@ -50,5 +51,5 @@ fn should_verify_valid_proof() {
     let proof = Proof::try_from(&data).unwrap();
     let pubs = hex!("0d69b94acdfaca5bacc248a60b35b925a2374644ce0c1205db68228c8921d9d9").into();
 
-    proof.verify(pubs).unwrap();
+    verify(&key, &proof, &pubs).unwrap();
 }

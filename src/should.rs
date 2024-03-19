@@ -112,17 +112,28 @@ fn valid_pubs() -> Public {
 
 #[rstest]
 fn compute_valid_check_paring(valid_proof: Proof, valid_pubs: Public) {
-    let challenges = Challenges::from((&valid_proof, &valid_pubs));
-    let (inverse, l1) = challenges.compute_inverse(valid_proof.inv).unwrap();
+    let key = AugmentedVerificationKey::default();
+
+    let challenges = Challenges::from((&key, &valid_proof, &valid_pubs));
+    let (inverse, l1) = challenges
+        .compute_inverse(key.n, key.w, valid_proof.inv)
+        .unwrap();
     let pi = Proof::compute_pi(&valid_pubs, l1);
     let r0 = valid_proof.compute_r0(&challenges, &inverse.li_s0_inv);
     let r1 = valid_proof.compute_r1(&challenges, pi, inverse.zh_inv, &inverse.li_s1_inv);
-    let r2 = valid_proof.compute_r2(&challenges, l1, inverse.zh_inv, &inverse.li_s2_inv);
+    let r2 = valid_proof.compute_r2(&key, &challenges, l1, inverse.zh_inv, &inverse.li_s2_inv);
 
-    let (f, e, j) =
-        valid_proof.compute_fej(&challenges, r0, r1, r2, inverse.den_h1, inverse.den_h2);
+    let (f, e, j) = valid_proof.compute_fej(
+        &key,
+        &challenges,
+        r0,
+        r1,
+        r2,
+        inverse.den_h1,
+        inverse.den_h2,
+    );
 
-    let result = valid_proof.check_paring(&challenges, f, e, j);
+    let result = valid_proof.check_paring(&challenges, &key, f, e, j);
 
     assert!(result.is_ok())
 }
@@ -131,7 +142,8 @@ fn compute_valid_check_paring(valid_proof: Proof, valid_pubs: Public) {
 #[case(ValidTestCase {})]
 #[case(AdditionalValidTestCase {})]
 fn verify_valid_proof<TC: TestCase>(#[case] _a: TC) {
-    assert!(TC::valid_proof().verify(TC::valid_pubs()).is_ok())
+    let key = AugmentedVerificationKey::default();
+    assert!(verify(&key, &TC::valid_proof(), &TC::valid_pubs()).is_ok())
 }
 
 mod reject {
@@ -222,21 +234,27 @@ mod reject {
         )]
         change: ProofFields,
     ) {
+        let vk = AugmentedVerificationKey::default();
         let perturbed_proof = change.perturbed(valid_proof, &mut rng);
-        assert!(perturbed_proof.verify(valid_pubs).is_err())
+
+        assert!(verify(&vk, &perturbed_proof, &valid_pubs).is_err())
     }
 
     #[rstest]
+    #[should_panic]
     fn an_invalid_public_input(mut rng: impl Rng, valid_proof: Proof) {
-        assert!(valid_proof
-            .verify(
-                U256::random(
-                    &mut rng,
-                    &u256!("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
-                )
-                .into()
+        let vk = AugmentedVerificationKey::default();
+
+        verify(
+            &vk,
+            &valid_proof,
+            &U256::random(
+                &mut rng,
+                &u256!("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
             )
-            .is_err())
+            .into(),
+        )
+        .unwrap();
     }
 
     #[rstest]
@@ -246,7 +264,9 @@ mod reject {
         #[from(valid_proof)] mut proof: Proof,
         valid_pubs: Public,
     ) {
+        let vk = AugmentedVerificationKey::default();
+
         proof.inv = Fr::random(&mut rng);
-        proof.verify(valid_pubs).unwrap()
+        verify(&vk, &proof, &valid_pubs).unwrap()
     }
 }

@@ -12,7 +12,7 @@ where the [constants come from fork-id 6 PR](https://github.com/0xPolygon/cdk-va
 ## Usage
 
 ```rust
-use fflonk_verifier::{Proof, Public};
+use fflonk_verifier::{verify, AugmentedVerificationKey, Proof} ;
 # use hex_literal::hex;
 
 let data = hex!(
@@ -43,8 +43,9 @@ let data = hex!(
         0fdf8244018ce57b018c093e2f75ed77d8dbdb1a7b60a2da671de2efe5f6b9d7
         "#
 );
+let vk = AugmentedVerificationKey::default();
 let proof = Proof::try_from(&data).unwrap();
 let pubs = hex!("0d69b94acdfaca5bacc248a60b35b925a2374644ce0c1205db68228c8921d9d9").into();
 
-proof.verify(pubs).unwrap();
+verify(&vk, &proof, &pubs).unwrap();
 ```
