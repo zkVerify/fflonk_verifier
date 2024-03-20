@@ -110,6 +110,11 @@ fn valid_pubs() -> Public {
     ValidTestCase::valid_pubs()
 }
 
+#[fixture]
+fn valid_vk() -> VerificationKey {
+    VerificationKey::default()
+}
+
 #[rstest]
 fn compute_valid_check_paring(valid_proof: Proof, valid_pubs: Public) {
     let vk = VerificationKey::default();
@@ -240,6 +245,73 @@ mod reject {
         let perturbed_proof = change.perturbed(valid_proof, &mut rng);
 
         assert!(verify(&vk, &perturbed_proof, &valid_pubs).is_err())
+    }
+
+    #[derive(Debug)]
+    pub enum VkFields {
+        Power,
+        K1,
+        K2,
+        W,
+        W3,
+        W4,
+        W8,
+        Wr,
+        X2,
+        C0,
+    }
+
+    impl VkFields {
+        fn perturbed(&self, mut vk: VerificationKey, rng: &mut impl Rng) -> VerificationKey {
+            let random = Fr::random(rng);
+            let mut change = |v: &mut u8| {
+                let orig = *v;
+                while *v == orig {
+                    *v = rng.gen();
+                }
+            };
+            match self {
+                VkFields::Power => change(&mut vk.power),
+                VkFields::K1 => change(&mut vk.k1),
+                VkFields::K2 => change(&mut vk.k2),
+                VkFields::W => {
+                    vk.w = random;
+                }
+                VkFields::W3 => {
+                    vk.w3 = random;
+                }
+                VkFields::W4 => {
+                    vk.w4 = random;
+                }
+                VkFields::W8 => {
+                    vk.w8 = random;
+                }
+                VkFields::Wr => {
+                    vk.wr = random;
+                }
+                VkFields::X2 => {
+                    vk.x2 = vk.x2 * random;
+                }
+                VkFields::C0 => {
+                    vk.c0 = vk.c0 * random;
+                }
+            }
+            vk
+        }
+    }
+
+    use VkFields::*;
+    #[rstest]
+    fn an_invalid_vk(
+        mut rng: impl Rng,
+        valid_proof: Proof,
+        valid_pubs: Public,
+        valid_vk: VerificationKey,
+        #[values(Power, K1, K2, W, W3, W4, W8, Wr, X2, C0)] change: VkFields,
+    ) {
+        let perturbed_vk = change.perturbed(valid_vk, &mut rng);
+
+        assert!(verify(&perturbed_vk, &valid_proof, &valid_pubs).is_err())
     }
 
     #[rstest]
