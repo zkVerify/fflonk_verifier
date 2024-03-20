@@ -272,8 +272,12 @@ mod reject {
             };
             match self {
                 VkFields::Power => change(&mut vk.power),
-                VkFields::K1 => change(&mut vk.k1),
-                VkFields::K2 => change(&mut vk.k2),
+                VkFields::K1 => {
+                    vk.k1 = random;
+                }
+                VkFields::K2 => {
+                    vk.k1 = random;
+                }
                 VkFields::W => {
                     vk.w = random;
                 }

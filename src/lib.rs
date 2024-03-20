@@ -122,8 +122,6 @@ impl<'a> From<&'a VerificationKey> for VkData<'a> {
 
 struct PrecomputedData {
     pub n: Fr,
-    pub k1: Fr,
-    pub k2: Fr,
     pub w3: [Fr; 2],
     pub w4: [Fr; 3],
     pub w8: [Fr; 7],
@@ -141,8 +139,6 @@ impl From<&VerificationKey> for PrecomputedData {
         }
         Self {
             n: 2.into_fr().pow((vk.power as u64).into_fr()),
-            k1: (vk.k1 as u64).into_fr(),
-            k2: (vk.k2 as u64).into_fr(),
             w3,
             w4,
             w8,
@@ -235,8 +231,8 @@ impl Proof {
         let beta_xi = challenges.beta * challenges.xi;
         let t1 = (self.z - Fr::one()) * l1 * zh_inv;
         let t2 = (((self.a + beta_xi + challenges.gamma)
-            * (self.b + beta_xi * vk.precomputed.k1 + challenges.gamma)
-            * (self.c + beta_xi * vk.precomputed.k2 + challenges.gamma)
+            * (self.b + beta_xi * vk.vk.k1 + challenges.gamma)
+            * (self.c + beta_xi * vk.vk.k2 + challenges.gamma)
             * self.z)
             - ((self.a + challenges.beta * self.s1 + challenges.gamma)
                 * (self.b + challenges.beta * self.s2 + challenges.gamma)
