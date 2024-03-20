@@ -17,7 +17,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![doc = include_str!("../README.md")]
 
-use key::AugmentedVerificationKey;
 pub use key::VerificationKey;
 use macros::u256;
 use snafu::Snafu;
@@ -90,17 +89,69 @@ enum ProofFields {
 /// - the provided inverse in the proof is wrong
 /// - the pair checking is wrong
 pub fn verify(vk: &VerificationKey, proof: &Proof, pubs: &Public) -> Result<(), VerifyError> {
-    let vk: AugmentedVerificationKey = vk.into();
-    let challenges: Challenges = (&vk, proof, pubs).into();
-    let (inverse, l1) = challenges.compute_inverse(vk.n, vk.w, proof.inv)?;
+    let vk = vk.into();
+    let challenges = Challenges::build(&vk, proof, pubs);
+    let (inverse, l1) = challenges.compute_inverse(&vk, proof.inv)?;
     let pi = Proof::compute_pi(&pubs, l1);
     let r0 = proof.compute_r0(&challenges, &inverse.li_s0_inv);
     let r1 = proof.compute_r1(&challenges, pi, inverse.zh_inv, &inverse.li_s1_inv);
     let r2 = proof.compute_r2(&vk, &challenges, l1, inverse.zh_inv, &inverse.li_s2_inv);
 
-    let (f, e, j) = proof.compute_fej(&vk, &challenges, r0, r1, r2, inverse.den_h1, inverse.den_h2);
+    let (f, e, j) = proof.compute_fej(
+        vk.vk,
+        &challenges,
+        r0,
+        r1,
+        r2,
+        inverse.den_h1,
+        inverse.den_h2,
+    );
 
-    proof.check_paring(&challenges, &vk, f, e, j)
+    proof.check_paring(&challenges, vk.vk, f, e, j)
+}
+
+struct VkData<'a> {
+    vk: &'a VerificationKey,
+    precomputed: PrecomputedData,
+}
+
+impl<'a> From<&'a VerificationKey> for VkData<'a> {
+    fn from(vk: &'a VerificationKey) -> Self {
+        Self {
+            vk,
+            precomputed: vk.into(),
+        }
+    }
+}
+
+struct PrecomputedData {
+    pub n: Fr,
+    pub k1: Fr,
+    pub k2: Fr,
+    pub w3: [Fr; 2],
+    pub w4: [Fr; 3],
+    pub w8: [Fr; 7],
+}
+
+impl From<&VerificationKey> for PrecomputedData {
+    fn from(vk: &VerificationKey) -> Self {
+        let w3 = [vk.w3, vk.w3 * vk.w3];
+        let w4_2 = vk.w4 * vk.w4;
+        let w4 = [vk.w4, w4_2, vk.w4 * w4_2];
+        let mut w8: [Fr; 7] = [Fr::zero(); 7];
+        w8[0] = vk.w8;
+        for i in 1..7 {
+            w8[i] = w8[i - 1] * vk.w8;
+        }
+        Self {
+            n: 2.into_fr().pow((vk.power as u64).into_fr()),
+            k1: (vk.k1 as u64).into_fr(),
+            k2: (vk.k2 as u64).into_fr(),
+            w3,
+            w4,
+            w8,
+        }
+    }
 }
 
 /// The Proof data: use the implemented conversion traits `TryFrom` to build it.
@@ -175,21 +226,21 @@ impl Proof {
     /// and computing T1(xi) and T2(xi)
     fn compute_r2(
         &self,
-        vk: &AugmentedVerificationKey,
+        vk: &VkData,
         challenges: &Challenges,
         l1: Fr,
         zh_inv: Fr,
         li_s2_inv: &LiS2,
     ) -> Fr {
         let base = challenges.y.pow(6_u64.into_fr())
-            - (challenges.y.pow(3_u64.into_fr()) * challenges.xi * (Fr::one() + vk.w))
-            + (challenges.xi * challenges.xi * vk.w);
+            - (challenges.y.pow(3_u64.into_fr()) * challenges.xi * (Fr::one() + vk.vk.w))
+            + (challenges.xi * challenges.xi * vk.vk.w);
 
         let beta_xi = challenges.beta * challenges.xi;
         let t1 = (self.z - Fr::one()) * l1 * zh_inv;
         let t2 = (((self.a + beta_xi + challenges.gamma)
-            * (self.b + beta_xi * vk.k1 + challenges.gamma)
-            * (self.c + beta_xi * vk.k2 + challenges.gamma)
+            * (self.b + beta_xi * vk.precomputed.k1 + challenges.gamma)
+            * (self.c + beta_xi * vk.precomputed.k2 + challenges.gamma)
             * self.z)
             - ((self.a + challenges.beta * self.s1 + challenges.gamma)
                 * (self.b + challenges.beta * self.s2 + challenges.gamma)
@@ -218,7 +269,7 @@ impl Proof {
 
     fn compute_fej(
         &self,
-        vk: &AugmentedVerificationKey,
+        vk: &VerificationKey,
         challenges: &Challenges,
         r0: Fr,
         r1: Fr,
@@ -242,7 +293,7 @@ impl Proof {
     fn check_paring(
         &self,
         challenges: &Challenges,
-        vk: &AugmentedVerificationKey,
+        vk: &VerificationKey,
         f: G1,
         e: G1,
         j: G1,
@@ -288,8 +339,6 @@ pub enum VerifyError {
     #[snafu(display("Cannot verify paring"))]
     NotPairing,
 }
-
-impl FFlonkConstants for AugmentedVerificationKey {}
 
 trait AugmentedKey {
     fn n() -> Fr;
@@ -433,29 +482,6 @@ trait Constants: FFlonkConstants {
     }
 }
 
-trait CConstants: FFlonkConstants {
-    fn n(&self) -> Fr;
-    fn k1(&self) -> Fr;
-    fn k2(&self) -> Fr;
-    fn f(&self) -> G1;
-
-    fn x2_pair(&self) -> G2;
-    fn w1(&self) -> Fr;
-    fn wr(&self) -> Fr;
-    fn w3(&self) -> Fr;
-    fn w3_2(&self) -> Fr;
-    fn w4(&self) -> Fr;
-    fn w4_2(&self) -> Fr;
-    fn w4_3(&self) -> Fr;
-    fn w8_1(&self) -> Fr;
-    fn w8_2(&self) -> Fr;
-    fn w8_3(&self) -> Fr;
-    fn w8_4(&self) -> Fr;
-    fn w8_5(&self) -> Fr;
-    fn w8_6(&self) -> Fr;
-    fn w8_7(&self) -> Fr;
-}
-
 #[derive(Debug)]
 struct Challenges {
     beta: Fr,
@@ -485,6 +511,101 @@ struct Inverse {
 }
 
 impl Challenges {
+    fn build(vk: &VkData, proof: &Proof, public: &Public) -> Self {
+        let precomputed = &vk.precomputed;
+        let vk = vk.vk;
+
+        let beta = [
+            vk.c0.x().into_u256(),
+            vk.c0.y().into_u256(),
+            public.0,
+            proof.c1.x().into_u256(),
+            proof.c1.y().into_u256(),
+        ]
+        .hash()
+        .into_fr();
+        let gamma = [beta.into_u256()].hash().into_fr();
+        let xi_seed = [
+            gamma.into_u256(),
+            proof.c2.x().into_u256(),
+            proof.c2.y().into_u256(),
+        ]
+        .hash()
+        .into_fr();
+        let xi_seed_2 = xi_seed * xi_seed;
+        let xi_seed_3 = xi_seed * xi_seed_2;
+        let h0_w8 = [
+            xi_seed_3,
+            xi_seed_3 * precomputed.w8[0],
+            xi_seed_3 * precomputed.w8[1],
+            xi_seed_3 * precomputed.w8[2],
+            xi_seed_3 * precomputed.w8[3],
+            xi_seed_3 * precomputed.w8[4],
+            xi_seed_3 * precomputed.w8[5],
+            xi_seed_3 * precomputed.w8[6],
+        ];
+        let xi_seed_6 = xi_seed_3 * xi_seed_3;
+        let h1_w4 = [
+            xi_seed_6,
+            xi_seed_6 * precomputed.w4[0],
+            xi_seed_6 * precomputed.w4[1],
+            xi_seed_6 * precomputed.w4[2],
+        ];
+        let xi_seed_8 = xi_seed_6 * xi_seed_2;
+        let h2_w3 = [
+            xi_seed_8,
+            xi_seed_8 * precomputed.w3[0],
+            xi_seed_8 * precomputed.w3[1],
+        ];
+        let h3_w3_0 = xi_seed_8 * vk.wr;
+        let h3_w3 = [
+            h3_w3_0,
+            h3_w3_0 * precomputed.w3[0],
+            h3_w3_0 * precomputed.w3[1],
+        ];
+        let xi = xi_seed_8 * xi_seed_8 * xi_seed_8;
+        let zh = xi.pow(precomputed.n) - Fr::one();
+        let alpha = [
+            xi_seed.into_u256(),
+            proof.ql.into_u256(),
+            proof.qr.into_u256(),
+            proof.qm.into_u256(),
+            proof.qo.into_u256(),
+            proof.qc.into_u256(),
+            proof.s1.into_u256(),
+            proof.s2.into_u256(),
+            proof.s3.into_u256(),
+            proof.a.into_u256(),
+            proof.b.into_u256(),
+            proof.c.into_u256(),
+            proof.z.into_u256(),
+            proof.zw.into_u256(),
+            proof.t1w.into_u256(),
+            proof.t2w.into_u256(),
+        ]
+        .hash()
+        .into_fr();
+        let y = [
+            alpha.into_u256(),
+            proof.w1.x().into_u256(),
+            proof.w1.y().into_u256(),
+        ]
+        .hash()
+        .into_fr();
+        Self {
+            beta,
+            gamma,
+            h0_w8,
+            h1_w4,
+            h2_w3,
+            h3_w3,
+            xi,
+            zh,
+            alpha,
+            y,
+        }
+    }
+
     fn compute_li_s0(&self) -> LiS0 {
         let den1 = self.h0_w8[0].pow(6_u64.into_fr()) * 8_u64.into_fr();
         [
@@ -542,7 +663,7 @@ impl Challenges {
         w * (self.y - self.h3_w3[2])
     }
 
-    fn compute_inverse(&self, n: Fr, w: Fr, expected: Fr) -> Result<(Inverse, Fr), VerifyError> {
+    fn compute_inverse(&self, vk: &VkData, expected: Fr) -> Result<(Inverse, Fr), VerifyError> {
         let den_h1_base = self.compute_den_h1_base();
         let den_h2_base = self.compute_den_h2_base();
         let mut data = [Fr::zero(); 22];
@@ -560,13 +681,13 @@ impl Challenges {
             data[cursor] = data[cursor - 1] * elem;
             cursor += 1;
         }
-        let li_s2 = self.compute_li_s2(w);
+        let li_s2 = self.compute_li_s2(vk.vk.w);
         for elem in li_s2 {
             data[cursor] = data[cursor - 1] * elem;
             cursor += 1;
         }
 
-        let eval_l1_base = self.compute_eval_l1_base(n);
+        let eval_l1_base = self.compute_eval_l1_base(vk.precomputed.n);
         data[cursor] = data[cursor - 1] * eval_l1_base;
         let value = data[cursor];
 
@@ -621,92 +742,6 @@ impl Challenges {
 }
 
 impl FFlonkConstants for Challenges {}
-
-impl From<(&AugmentedVerificationKey, &Proof, &Public)> for Challenges {
-    fn from((key, proof, public): (&AugmentedVerificationKey, &Proof, &Public)) -> Self {
-        let beta = [
-            key.c0.x().into_u256(),
-            key.c0.y().into_u256(),
-            public.0,
-            proof.c1.x().into_u256(),
-            proof.c1.y().into_u256(),
-        ]
-        .hash()
-        .into_fr();
-        let gamma = [beta.into_u256()].hash().into_fr();
-        let xi_seed = [
-            gamma.into_u256(),
-            proof.c2.x().into_u256(),
-            proof.c2.y().into_u256(),
-        ]
-        .hash()
-        .into_fr();
-        let xi_seed_2 = xi_seed * xi_seed;
-        let xi_seed_3 = xi_seed * xi_seed_2;
-        let h0_w8 = [
-            xi_seed_3,
-            xi_seed_3 * key.w8[0],
-            xi_seed_3 * key.w8[1],
-            xi_seed_3 * key.w8[2],
-            xi_seed_3 * key.w8[3],
-            xi_seed_3 * key.w8[4],
-            xi_seed_3 * key.w8[5],
-            xi_seed_3 * key.w8[6],
-        ];
-        let xi_seed_6 = xi_seed_3 * xi_seed_3;
-        let h1_w4 = [
-            xi_seed_6,
-            xi_seed_6 * key.w4[0],
-            xi_seed_6 * key.w4[1],
-            xi_seed_6 * key.w4[2],
-        ];
-        let xi_seed_8 = xi_seed_6 * xi_seed_2;
-        let h2_w3 = [xi_seed_8, xi_seed_8 * key.w3[0], xi_seed_8 * key.w3[1]];
-        let h3_w3_0 = xi_seed_8 * key.wr;
-        let h3_w3 = [h3_w3_0, h3_w3_0 * key.w3[0], h3_w3_0 * key.w3[1]];
-        let xi = xi_seed_8 * xi_seed_8 * xi_seed_8;
-        let zh = xi.pow(key.n) - Fr::one();
-        let alpha = [
-            xi_seed.into_u256(),
-            proof.ql.into_u256(),
-            proof.qr.into_u256(),
-            proof.qm.into_u256(),
-            proof.qo.into_u256(),
-            proof.qc.into_u256(),
-            proof.s1.into_u256(),
-            proof.s2.into_u256(),
-            proof.s3.into_u256(),
-            proof.a.into_u256(),
-            proof.b.into_u256(),
-            proof.c.into_u256(),
-            proof.z.into_u256(),
-            proof.zw.into_u256(),
-            proof.t1w.into_u256(),
-            proof.t2w.into_u256(),
-        ]
-        .hash()
-        .into_fr();
-        let y = [
-            alpha.into_u256(),
-            proof.w1.x().into_u256(),
-            proof.w1.y().into_u256(),
-        ]
-        .hash()
-        .into_fr();
-        Self {
-            beta,
-            gamma,
-            h0_w8,
-            h1_w4,
-            h2_w3,
-            h3_w3,
-            xi,
-            zh,
-            alpha,
-            y,
-        }
-    }
-}
 
 #[cfg(test)]
 mod should;

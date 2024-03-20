@@ -112,28 +112,28 @@ fn valid_pubs() -> Public {
 
 #[rstest]
 fn compute_valid_check_paring(valid_proof: Proof, valid_pubs: Public) {
-    let key = AugmentedVerificationKey::default();
+    let vk = VerificationKey::default();
+    let vk_data = (&vk).into();
 
-    let challenges = Challenges::from((&key, &valid_proof, &valid_pubs));
+    let challenges = Challenges::build(&vk_data, &valid_proof, &valid_pubs);
     let (inverse, l1) = challenges
-        .compute_inverse(key.n, key.w, valid_proof.inv)
+        .compute_inverse(&vk_data, valid_proof.inv)
         .unwrap();
     let pi = Proof::compute_pi(&valid_pubs, l1);
     let r0 = valid_proof.compute_r0(&challenges, &inverse.li_s0_inv);
     let r1 = valid_proof.compute_r1(&challenges, pi, inverse.zh_inv, &inverse.li_s1_inv);
-    let r2 = valid_proof.compute_r2(&key, &challenges, l1, inverse.zh_inv, &inverse.li_s2_inv);
-
-    let (f, e, j) = valid_proof.compute_fej(
-        &key,
+    let r2 = valid_proof.compute_r2(
+        &vk_data,
         &challenges,
-        r0,
-        r1,
-        r2,
-        inverse.den_h1,
-        inverse.den_h2,
+        l1,
+        inverse.zh_inv,
+        &inverse.li_s2_inv,
     );
 
-    let result = valid_proof.check_paring(&challenges, &key, f, e, j);
+    let (f, e, j) =
+        valid_proof.compute_fej(&vk, &challenges, r0, r1, r2, inverse.den_h1, inverse.den_h2);
+
+    let result = valid_proof.check_paring(&challenges, &vk, f, e, j);
 
     assert!(result.is_ok())
 }
