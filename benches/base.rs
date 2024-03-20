@@ -19,7 +19,7 @@ fn main() {
     divan::main();
 }
 
-use fflonk_verifier::{verify, AugmentedVerificationKey, Proof, VerificationKey};
+use fflonk_verifier::{verify, Proof, VerificationKey};
 use hex_literal::hex;
 
 static VALID_PROOF_DATA: [u8; 768] = hex!(
@@ -54,30 +54,12 @@ static VALID_PUBS_DATA: [u8; 32] =
     hex!("0d69b94acdfaca5bacc248a60b35b925a2374644ce0c1205db68228c8921d9d9");
 
 #[divan::bench]
-fn fflonk_verifier() -> bool {
-    fn compute(vk: AugmentedVerificationKey, data: [u8; 768], pubs: [u8; 32]) -> bool {
-        let proof = Proof::try_from(&data).unwrap();
-        let pubs = pubs.into();
-
-        verify(&vk, &proof, &pubs).is_ok()
-    }
-
-    let vk = AugmentedVerificationKey::default();
-
-    compute(
-        divan::black_box(vk),
-        divan::black_box(VALID_PROOF_DATA),
-        divan::black_box(VALID_PUBS_DATA),
-    )
-}
-
-#[divan::bench]
 fn fflonk_verifier_with_base_key() -> bool {
     fn compute(vk: VerificationKey, data: [u8; 768], pubs: [u8; 32]) -> bool {
         let proof = Proof::try_from(&data).unwrap();
         let pubs = pubs.into();
 
-        verify(&vk.into(), &proof, &pubs).is_ok()
+        verify(&vk, &proof, &pubs).is_ok()
     }
 
     let vk = VerificationKey::default();

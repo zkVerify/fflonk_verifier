@@ -60,6 +60,31 @@ impl Default for VerificationKey {
     }
 }
 
+impl From<&VerificationKey> for AugmentedVerificationKey {
+    fn from(vk: &VerificationKey) -> Self {
+        let w3 = [vk.w3, vk.w3 * vk.w3];
+        let w4_2 = vk.w4 * vk.w4;
+        let w4 = [vk.w4, w4_2, vk.w4 * w4_2];
+        let mut w8: [Fr; 7] = [Fr::zero(); 7];
+        w8[0] = vk.w8;
+        for i in 1..7 {
+            w8[i] = w8[i - 1] * vk.w8;
+        }
+        Self {
+            n: 2.into_fr().pow((vk.power as u64).into_fr()),
+            k1: (vk.k1 as u64).into_fr(),
+            k2: (vk.k2 as u64).into_fr(),
+            w: vk.w,
+            w3,
+            w4,
+            w8,
+            wr: vk.wr,
+            x2: vk.x2,
+            c0: vk.c0,
+        }
+    }
+}
+
 impl From<VerificationKey> for AugmentedVerificationKey {
     fn from(vk: VerificationKey) -> Self {
         let w3 = [vk.w3, vk.w3 * vk.w3];

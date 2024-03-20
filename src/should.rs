@@ -142,7 +142,7 @@ fn compute_valid_check_paring(valid_proof: Proof, valid_pubs: Public) {
 #[case(ValidTestCase {})]
 #[case(AdditionalValidTestCase {})]
 fn verify_valid_proof<TC: TestCase>(#[case] _a: TC) {
-    let key = AugmentedVerificationKey::default();
+    let key = VerificationKey::default();
     assert!(verify(&key, &TC::valid_proof(), &TC::valid_pubs()).is_ok())
 }
 
@@ -234,7 +234,7 @@ mod reject {
         )]
         change: ProofFields,
     ) {
-        let vk = AugmentedVerificationKey::default();
+        let vk = VerificationKey::default();
         let perturbed_proof = change.perturbed(valid_proof, &mut rng);
 
         assert!(verify(&vk, &perturbed_proof, &valid_pubs).is_err())
@@ -243,7 +243,7 @@ mod reject {
     #[rstest]
     #[should_panic]
     fn an_invalid_public_input(mut rng: impl Rng, valid_proof: Proof) {
-        let vk = AugmentedVerificationKey::default();
+        let vk = VerificationKey::default();
 
         verify(
             &vk,
@@ -264,7 +264,7 @@ mod reject {
         #[from(valid_proof)] mut proof: Proof,
         valid_pubs: Public,
     ) {
-        let vk = AugmentedVerificationKey::default();
+        let vk = VerificationKey::default();
 
         proof.inv = Fr::random(&mut rng);
         verify(&vk, &proof, &valid_pubs).unwrap()

@@ -17,7 +17,8 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![doc = include_str!("../README.md")]
 
-pub use key::{AugmentedVerificationKey, VerificationKey};
+use key::AugmentedVerificationKey;
+pub use key::VerificationKey;
 use macros::u256;
 use snafu::Snafu;
 use substrate_bn::{arith::U256, pairing_batch, AffineG1, AffineG2, Fq, Fq2, Fr, Gt, G1, G2};
@@ -88,21 +89,18 @@ enum ProofFields {
 /// Can fail if:
 /// - the provided inverse in the proof is wrong
 /// - the pair checking is wrong
-pub fn verify(
-    vk: &AugmentedVerificationKey,
-    proof: &Proof,
-    pubs: &Public,
-) -> Result<(), VerifyError> {
-    let challenges: Challenges = (vk, proof, pubs).into();
+pub fn verify(vk: &VerificationKey, proof: &Proof, pubs: &Public) -> Result<(), VerifyError> {
+    let vk: AugmentedVerificationKey = vk.into();
+    let challenges: Challenges = (&vk, proof, pubs).into();
     let (inverse, l1) = challenges.compute_inverse(vk.n, vk.w, proof.inv)?;
     let pi = Proof::compute_pi(&pubs, l1);
     let r0 = proof.compute_r0(&challenges, &inverse.li_s0_inv);
     let r1 = proof.compute_r1(&challenges, pi, inverse.zh_inv, &inverse.li_s1_inv);
-    let r2 = proof.compute_r2(vk, &challenges, l1, inverse.zh_inv, &inverse.li_s2_inv);
+    let r2 = proof.compute_r2(&vk, &challenges, l1, inverse.zh_inv, &inverse.li_s2_inv);
 
-    let (f, e, j) = proof.compute_fej(vk, &challenges, r0, r1, r2, inverse.den_h1, inverse.den_h2);
+    let (f, e, j) = proof.compute_fej(&vk, &challenges, r0, r1, r2, inverse.den_h1, inverse.den_h2);
 
-    proof.check_paring(&challenges, vk, f, e, j)
+    proof.check_paring(&challenges, &vk, f, e, j)
 }
 
 /// The Proof data: use the implemented conversion traits `TryFrom` to build it.
