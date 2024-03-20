@@ -324,24 +324,6 @@ fn polynomial_eval(
     acc
 }
 
-trait AugmentedKey {
-    fn n() -> Fr;
-
-    // Plonk k1 multiplicative factor to force distinct cosets of H
-    fn k1() -> Fr;
-    // Plonk k2 multiplicative factor to force distinct cosets of H
-    fn k2() -> Fr;
-
-    fn w() -> Fr;
-    fn w3() -> Fr;
-    fn w4() -> Fr;
-    fn w8() -> Fr;
-    fn wr() -> Fr;
-
-    fn x2() -> G2;
-    fn c0() -> G1;
-}
-
 trait FFlonkConstants {
     fn g1() -> G1 {
         AffineG1::new(Fq::one(), 2.into_fq())
