@@ -147,6 +147,8 @@ fn verify_valid_proof<TC: TestCase>(#[case] _a: TC) {
 }
 
 mod reject {
+    use self::proof_input::ProofFields;
+
     use super::*;
 
     #[fixture]

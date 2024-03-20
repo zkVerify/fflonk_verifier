@@ -17,7 +17,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![doc = include_str!("../README.md")]
 
-pub use key::VerificationKey;
 use macros::u256;
 use snafu::Snafu;
 use substrate_bn::{arith::U256, pairing_batch, AffineG1, AffineG2, Fq, Fq2, Fr, Gt, G1, G2};
@@ -29,9 +28,11 @@ use utils::IntoFr as _;
 pub(crate) mod hash;
 mod key;
 mod macros;
-mod proof_input;
+pub(crate) mod proof_input;
 pub(crate) mod utils;
 
+/// The verification key.
+pub use key::VerificationKey;
 /// The proof data as `U256` fixed array.
 pub use proof_input::ProofData;
 /// The proof data as fixed size bytes array.
@@ -60,28 +61,17 @@ impl TryFrom<&[u8]> for Public {
     }
 }
 
-#[derive(Debug)]
-enum ProofFields {
-    C1,
-    C2,
-    W1,
-    W2,
-    Ql,
-    Qr,
-    Qm,
-    Qo,
-    Qc,
-    S1,
-    S2,
-    S3,
-    A,
-    B,
-    C,
-    Z,
-    Zw,
-    T1w,
-    T2w,
-    Inv,
+/// Verification Error
+#[derive(Snafu, Debug)]
+pub enum VerifyError {
+    /// The provided inverse is wrong
+    #[snafu(display(
+        "Invalid provided inverse is {inverse:?} that's not the inverse of {computed:?}"
+    ))]
+    InvalidInverse { inverse: Fr, computed: Fr },
+    /// Cannot verify the pairing for this proof
+    #[snafu(display("Cannot verify paring"))]
+    NotPairing,
 }
 
 /// Use the given verification key `vk` to verify the `proof`` against the given `pubs` public inputs.
@@ -89,16 +79,22 @@ enum ProofFields {
 /// - the provided inverse in the proof is wrong
 /// - the pair checking is wrong
 pub fn verify(vk: &VerificationKey, proof: &Proof, pubs: &Public) -> Result<(), VerifyError> {
-    let vk = vk.into();
-    let challenges = Challenges::build(&vk, proof, pubs);
-    let (inverse, l1) = challenges.compute_inverse(&vk, proof.inv)?;
-    let pi = Proof::compute_pi(&pubs, l1);
+    let vk_data = vk.into();
+    let challenges = Challenges::build(&vk_data, proof, pubs);
+    let (inverse, l1) = challenges.compute_inverse(&vk_data, proof.inv)?;
+    let pi = Proof::compute_pi(pubs, l1);
     let r0 = proof.compute_r0(&challenges, &inverse.li_s0_inv);
     let r1 = proof.compute_r1(&challenges, pi, inverse.zh_inv, &inverse.li_s1_inv);
-    let r2 = proof.compute_r2(&vk, &challenges, l1, inverse.zh_inv, &inverse.li_s2_inv);
+    let r2 = proof.compute_r2(
+        &vk_data,
+        &challenges,
+        l1,
+        inverse.zh_inv,
+        &inverse.li_s2_inv,
+    );
 
     let (f, e, j) = proof.compute_fej(
-        vk.vk,
+        vk_data.vk,
         &challenges,
         r0,
         r1,
@@ -107,7 +103,7 @@ pub fn verify(vk: &VerificationKey, proof: &Proof, pubs: &Public) -> Result<(), 
         inverse.den_h2,
     );
 
-    proof.check_paring(&challenges, vk.vk, f, e, j)
+    proof.check_paring(&challenges, vk_data.vk, f, e, j)
 }
 
 struct VkData<'a> {
@@ -267,6 +263,7 @@ impl Proof {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn compute_fej(
         &self,
         vk: &VerificationKey,
@@ -327,19 +324,6 @@ fn polynomial_eval(
     acc
 }
 
-/// Verification Error
-#[derive(Snafu, Debug)]
-pub enum VerifyError {
-    /// The provided inverse is wrong
-    #[snafu(display(
-        "Invalid provided inverse is {inverse:?} that's not the inverse of {computed:?}"
-    ))]
-    InvalidInverse { inverse: Fr, computed: Fr },
-    /// Cannot verify the pairing for this proof
-    #[snafu(display("Cannot verify paring"))]
-    NotPairing,
-}
-
 trait AugmentedKey {
     fn n() -> Fr;
 
@@ -378,107 +362,6 @@ trait FFlonkConstants {
         AffineG2::new(Fq2::new(g2x1, g2x2), Fq2::new(g2y1, g2y2))
             .expect("Should be on curve")
             .into()
-    }
-}
-
-trait Constants: FFlonkConstants {
-    const N: U256 = u256!("0000000000000000000000000000000000000000000000000000000001000000"); // 2^24 = 16777216
-    fn n() -> Fr {
-        Self::N.into_fr()
-    }
-
-    // Plonk k1 multiplicative factor to force distinct cosets of H
-    fn k1() -> Fr {
-        2.into_fr()
-    }
-    // Plonk k2 multiplicative factor to force distinct cosets of H
-    fn k2() -> Fr {
-        3.into_fr()
-    }
-
-    const C0X: U256 = u256!("10711a639fed66ba6cd6001188b8fe7285cb9bd01afc1f90598223550aa57e36");
-    const C0Y: U256 = u256!("28c937a4cb758326763015d30fff3568f5cbed932cdc7c411a435d3de04549ef");
-    fn f() -> G1 {
-        let x = Fq::from_u256(Self::C0X).expect("C0x should be a valid Fq point");
-        let y = Fq::from_u256(Self::C0Y).expect("C0y should be a valid Fq point");
-        AffineG1::new(x, y)
-            .expect("(C0x, C0y) Should be a valid G1 point")
-            .into()
-    }
-
-    const X2_X1: U256 = u256!("30441fd1b5d3370482c42152a8899027716989a6996c2535bc9f7fee8aaef79e");
-    const X2_X2: U256 = u256!("26186a2d65ee4d2f9c9a5b91f86597d35f192cd120caf7e935d8443d1938e23d");
-    const X2_Y1: U256 = u256!("054793348f12c0cf5622c340573cb277586319de359ab9389778f689786b1e48");
-    const X2_Y2: U256 = u256!("1970ea81dd6992adfbc571effb03503adbbb6a857f578403c6c40e22d65b3c02");
-
-    fn x2_pair() -> G2 {
-        let x2x1 = Fq::from_u256(Self::X2_X1).expect("X2x1 should be a valid Fq point");
-        let x2x2 = Fq::from_u256(Self::X2_X2).expect("X2x2 should be a valid Fq point");
-        let x2y1 = Fq::from_u256(Self::X2_Y1).expect("X2y1 should be a valid Fq point");
-        let x2y2 = Fq::from_u256(Self::X2_Y2).expect("X2y2 should be a valid Fq point");
-        AffineG2::new(Fq2::new(x2x1, x2x2), Fq2::new(x2y1, x2y2))
-            .expect("Should be on curve")
-            .into()
-    }
-
-    const W1: U256 = u256!("0c9fabc7845d50d2852e2a0371c6441f145e0db82e8326961c25f1e3e32b045b");
-    fn w1() -> Fr {
-        Self::W1.into_fr()
-    }
-    const WR: U256 = u256!("283ce45a2e5b8e4e78f9fbaf5f6a348bfcfaf76dd28e5ca7121b74ef68fdec2e");
-    fn wr() -> Fr {
-        Self::WR.into_fr()
-    }
-
-    const W3: U256 = u256!("30644e72e131a029048b6e193fd84104cc37a73fec2bc5e9b8ca0b2d36636f23");
-    fn w3() -> Fr {
-        Self::W3.into_fr()
-    }
-    const W3_2: U256 = u256!("0000000000000000b3c4d79d41a917585bfc41088d8daaa78b17ea66b99c90dd");
-    fn w3_2() -> Fr {
-        Self::W3_2.into_fr()
-    }
-
-    const W4: U256 = u256!("30644e72e131a029048b6e193fd841045cea24f6fd736bec231204708f703636");
-    fn w4() -> Fr {
-        Self::W4.into_fr()
-    }
-    const W4_2: U256 = u256!("30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000");
-    fn w4_2() -> Fr {
-        Self::W4_2.into_fr()
-    }
-    const W4_3: U256 = u256!("0000000000000000b3c4d79d41a91758cb49c3517c4604a520cff123608fc9cb");
-    fn w4_3() -> Fr {
-        Self::W4_3.into_fr()
-    }
-
-    const W8_1: U256 = u256!("2b337de1c8c14f22ec9b9e2f96afef3652627366f8170a0a948dad4ac1bd5e80");
-    fn w8_1() -> Fr {
-        Self::W8_1.into_fr()
-    }
-    const W8_2: U256 = u256!("30644e72e131a029048b6e193fd841045cea24f6fd736bec231204708f703636");
-    fn w8_2() -> Fr {
-        Self::W8_2.into_fr()
-    }
-    const W8_3: U256 = u256!("1d59376149b959ccbd157ac850893a6f07c2d99b3852513ab8d01be8e846a566");
-    fn w8_3() -> Fr {
-        Self::W8_3.into_fr()
-    }
-    const W8_4: U256 = u256!("30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000");
-    fn w8_4() -> Fr {
-        Self::W8_4.into_fr()
-    }
-    const W8_5: U256 = u256!("0530d09118705106cbb4a786ead16926d5d174e181a26686af5448492e42a181");
-    fn w8_5() -> Fr {
-        Self::W8_5.into_fr()
-    }
-    const W8_6: U256 = u256!("0000000000000000b3c4d79d41a91758cb49c3517c4604a520cff123608fc9cb");
-    fn w8_6() -> Fr {
-        Self::W8_6.into_fr()
-    }
-    const W8_7: U256 = u256!("130b17119778465cfb3acaee30f81dee20710ead41671f568b11d9ab07b95a9b");
-    fn w8_7() -> Fr {
-        Self::W8_7.into_fr()
     }
 }
 
