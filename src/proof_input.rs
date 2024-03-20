@@ -181,7 +181,7 @@ fn read_fr(field: ProofFields, data: U256) -> Result<Fr, ProofDataError> {
 }
 
 #[cfg(test)]
-mod tests {
+mod should {
     use rstest::rstest;
 
     use crate::macros::{u256, u256s};
