@@ -8,6 +8,9 @@ The solidity reference implementation from Polygon
 [is in solidity](https://github.com/0xPolygon/cdk-validium-contracts/blob/cecd53e0b1e39cd9df1a79215eedbbb636b4e0a7/contracts/verifiers/FflonkVerifier.sol)
 where the [verfication key come from fork-id 6 PR](https://github.com/0xPolygon/cdk-validium-contracts/compare/v0.0.1...v0.0.2#diff-464c9f4dd9c1b875ceb2aace2024dd3ef9dfea0d4b30e9ef8cf9ca3c743671f2R51)
 
+You can also deserialize verification keys (the circom's json format is supported): in this case you should
+use `serde` feature.
+
 ## Usage
 
 ```rust
