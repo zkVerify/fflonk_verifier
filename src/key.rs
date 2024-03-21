@@ -26,56 +26,6 @@ pub struct VerificationKey {
     pub c0: G1,
 }
 
-pub const VERIFICATION_KEY_LENGTH: usize = 1 + 32 * (7 + 2 * 3 + 3);
-
-impl Into<[u8; VERIFICATION_KEY_LENGTH]> for VerificationKey {
-    fn into(self) -> [u8; VERIFICATION_KEY_LENGTH] {
-        let mut bytes = [0_u8; VERIFICATION_KEY_LENGTH];
-        let write_fr = |fr: &Fr, b: &mut [u8], start: usize| {
-            fr.to_big_endian(&mut b[start..start + 32])
-                .expect("Can never fail because the length is 32 bytes")
-        };
-        let write_fq = |fq: &Fq, b: &mut [u8], start: usize| {
-            fq.to_big_endian(&mut b[start..start + 32])
-                .expect("Can never fail because the length is 32 bytes")
-        };
-        let write_fq2 = |fq2: &Fq2, b: &mut [u8], mut start: usize| {
-            fq2.real()
-                .to_big_endian(&mut b[start..start + 32])
-                .expect("Can never fail because the length is 32 bytes");
-            start += 32;
-            fq2.imaginary()
-                .to_big_endian(&mut b[start..start + 32])
-                .expect("Can never fail because the length is 32 bytes");
-        };
-        let write_g2 = |g2: &G2, b: &mut [u8], mut start: usize| {
-            write_fq2(&g2.x(), b, start);
-            start += 64;
-            write_fq2(&g2.y(), b, start);
-            start += 64;
-            write_fq2(&g2.z(), b, start);
-        };
-        let write_g1 = |g1: &G1, b: &mut [u8], mut start: usize| {
-            write_fq(&g1.x(), b, start);
-            start += 32;
-            write_fq(&g1.y(), b, start);
-            start += 32;
-            write_fq(&g1.z(), b, start);
-        };
-        bytes[0] = self.power;
-        write_fr(&self.k1, &mut bytes, 1);
-        write_fr(&self.k2, &mut bytes, 33);
-        write_fr(&self.w, &mut bytes, 65);
-        write_fr(&self.w3, &mut bytes, 97);
-        write_fr(&self.w4, &mut bytes, 129);
-        write_fr(&self.w8, &mut bytes, 161);
-        write_fr(&self.wr, &mut bytes, 193);
-        write_g2(&self.x2, &mut bytes, 225);
-        write_g1(&self.c0, &mut bytes, 417);
-        bytes
-    }
-}
-
 #[cfg(feature = "serde")]
 mod serde {
     pub mod fr {
