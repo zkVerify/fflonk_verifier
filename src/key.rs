@@ -26,48 +26,122 @@ pub struct VerificationKey {
     pub c0: G1,
 }
 
+pub const VERIFICATION_KEY_LENGTH: usize = 1 + 32 * (7 + 2 * 3 + 3);
+
+impl Into<[u8; VERIFICATION_KEY_LENGTH]> for VerificationKey {
+    fn into(self) -> [u8; VERIFICATION_KEY_LENGTH] {
+        let mut bytes = [0_u8; VERIFICATION_KEY_LENGTH];
+        let write_fr = |fr: &Fr, b: &mut [u8], start: usize| {
+            fr.to_big_endian(&mut b[start..start + 32])
+                .expect("Can never fail because the length is 32 bytes")
+        };
+        let write_fq = |fq: &Fq, b: &mut [u8], start: usize| {
+            fq.to_big_endian(&mut b[start..start + 32])
+                .expect("Can never fail because the length is 32 bytes")
+        };
+        let write_fq2 = |fq2: &Fq2, b: &mut [u8], mut start: usize| {
+            fq2.real()
+                .to_big_endian(&mut b[start..start + 32])
+                .expect("Can never fail because the length is 32 bytes");
+            start += 32;
+            fq2.imaginary()
+                .to_big_endian(&mut b[start..start + 32])
+                .expect("Can never fail because the length is 32 bytes");
+        };
+        let write_g2 = |g2: &G2, b: &mut [u8], mut start: usize| {
+            write_fq2(&g2.x(), b, start);
+            start += 64;
+            write_fq2(&g2.y(), b, start);
+            start += 64;
+            write_fq2(&g2.z(), b, start);
+        };
+        let write_g1 = |g1: &G1, b: &mut [u8], mut start: usize| {
+            write_fq(&g1.x(), b, start);
+            start += 32;
+            write_fq(&g1.y(), b, start);
+            start += 32;
+            write_fq(&g1.z(), b, start);
+        };
+        bytes[0] = self.power;
+        write_fr(&self.k1, &mut bytes, 1);
+        write_fr(&self.k2, &mut bytes, 33);
+        write_fr(&self.w, &mut bytes, 65);
+        write_fr(&self.w3, &mut bytes, 97);
+        write_fr(&self.w4, &mut bytes, 129);
+        write_fr(&self.w8, &mut bytes, 161);
+        write_fr(&self.wr, &mut bytes, 193);
+        write_g2(&self.x2, &mut bytes, 225);
+        write_g1(&self.c0, &mut bytes, 417);
+        bytes
+    }
+}
+
 #[cfg(feature = "serde")]
 mod serde {
     pub mod fr {
         use substrate_bn::{arith::U256, Fr};
 
-        use crate::utils::IntoFr;
+        use crate::utils::{IntoBytes, IntoFr};
 
         pub fn serialize<S>(fr: &Fr, s: S) -> Result<S::Ok, S::Error>
         where
             S: serde::Serializer,
         {
             let u256 = fr.into_u256();
-            ethnum::serde::decimal::serialize(&ethnum::U256::from_words(u256.0[1], u256.0[0]), s)
+            if s.is_human_readable() {
+                ethnum::serde::decimal::serialize(
+                    &ethnum::U256::from_words(u256.0[1], u256.0[0]),
+                    s,
+                )
+            } else {
+                s.serialize_bytes(&u256.into_bytes())
+            }
         }
 
         pub fn deserialize<'de, D>(data: D) -> Result<Fr, D::Error>
         where
             D: serde::Deserializer<'de>,
         {
-            let u256: ethnum::U256 = ethnum::serde::decimal::deserialize(data)?;
-            Ok(U256([u256.0[0], u256.0[1]]).into_fr())
+            if data.is_human_readable() {
+                let u256: ethnum::U256 = ethnum::serde::decimal::deserialize(data)?;
+                Ok(U256([u256.0[0], u256.0[1]]).into_fr())
+            } else {
+                <[u8; 32] as serde::Deserialize>::deserialize(data).map(IntoFr::into_fr)
+            }
         }
     }
 
     mod fq {
         use substrate_bn::{arith::U256, Fq};
 
+        use crate::utils::{IntoBytes, IntoU256};
+
         pub fn serialize<S>(fq: &Fq, s: S) -> Result<S::Ok, S::Error>
         where
             S: serde::Serializer,
         {
             let u256 = fq.into_u256();
-            ethnum::serde::decimal::serialize(&ethnum::U256::from_words(u256.0[1], u256.0[0]), s)
+            if s.is_human_readable() {
+                ethnum::serde::decimal::serialize(
+                    &ethnum::U256::from_words(u256.0[1], u256.0[0]),
+                    s,
+                )
+            } else {
+                s.serialize_bytes(&u256.into_bytes())
+            }
         }
 
         pub fn deserialize<'de, D>(data: D) -> Result<Fq, D::Error>
         where
             D: serde::Deserializer<'de>,
         {
-            let u256: ethnum::U256 = ethnum::serde::decimal::deserialize(data)?;
-            Fq::from_u256(U256([u256.0[0], u256.0[1]]))
-                .map_err(|_e| serde::de::Error::custom("Invalid Fq value"))
+            let u256 = if data.is_human_readable() {
+                let u256: ethnum::U256 = ethnum::serde::decimal::deserialize(data)?;
+                U256([u256.0[0], u256.0[1]])
+            } else {
+                <[u8; 32] as serde::Deserialize>::deserialize(data).map(IntoU256::into_u256)?
+            };
+            Fq::from_u256(u256).map_err(|_e| serde::de::Error::custom("Invalid Fq value"))
         }
     }
 
@@ -152,21 +226,21 @@ mod serde {
     }
 
     #[cfg(test)]
-    mod tests {
+    mod should {
         use pretty_assertions::assert_eq;
-        use serde_json::json;
 
         use super::super::*;
 
+        // Just because `json!` macro need `vec!` macro.
         #[cfg(feature = "std")]
         #[test]
-        fn should_serialize_the_valid_json() {
+        fn serialize_the_valid_json() {
             let vk = VerificationKey::default();
 
             let serialized = serde_json::to_string(&vk).unwrap();
 
             let v: serde_json::Value = serde_json::from_str(&serialized).unwrap();
-            let expected = json!({
+            let expected = serde_json::json!({
             "power": 24,
             "k1": "2",
             "k2": "3",
@@ -199,7 +273,7 @@ mod serde {
         }
 
         #[test]
-        fn should_deserialize_the_verification_key_json() {
+        fn deserialize_the_verification_key_json() {
             let json = r#"
         {
             "protocol": "fflonk",
@@ -237,6 +311,24 @@ mod serde {
             let vk: VerificationKey = serde_json::from_str(json).unwrap();
 
             assert_eq!(VerificationKey::default(), vk);
+        }
+
+        #[test]
+        fn serialize_deserialize_default_key() {
+            let vk = VerificationKey::default();
+            let json = serde_json::to_string(&vk).unwrap();
+            let other = serde_json::from_str(&json).unwrap();
+
+            assert_eq!(vk, other);
+        }
+
+        #[test]
+        fn serialize_deserialize_in_a_non_human_readable_format() {
+            let vk = VerificationKey::default();
+            let mut buffer = [0_u8; 600];
+            ciborium::into_writer(&vk, buffer.as_mut_slice()).unwrap();
+            let other = ciborium::from_reader(buffer.as_slice()).unwrap();
+            assert_eq!(vk, other);
         }
     }
 }
