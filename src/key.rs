@@ -123,7 +123,7 @@ mod serde {
 
     pub mod g2 {
         use serde::{Deserialize, Serialize};
-        use substrate_bn::{Fq2, G2};
+        use substrate_bn::{AffineG2, Fq2, Group, G2};
 
         #[derive(Serialize, Deserialize)]
         struct G2Serde(
@@ -139,18 +139,31 @@ mod serde {
             G2Serde(g2.x(), g2.y(), g2.z()).serialize(s)
         }
 
+        fn check_point<'de, D>(point: &G2) -> Result<(), D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            let mut check = point.clone();
+            check.normalize();
+            AffineG2::new(check.x(), check.y())
+                .map_err(|_e| serde::de::Error::custom("Invalid G2 point"))?;
+            Ok(())
+        }
+
         pub fn deserialize<'de, D>(data: D) -> Result<G2, D::Error>
         where
             D: serde::Deserializer<'de>,
         {
             let g2 = G2Serde::deserialize(data)?;
-            Ok(G2::new(g2.0, g2.1, g2.2))
+            let candidate = G2::new(g2.0, g2.1, g2.2);
+            check_point::<D>(&candidate)?;
+            Ok(candidate)
         }
     }
 
     pub mod g1 {
         use serde::{Deserialize, Serialize};
-        use substrate_bn::{Fq, G1};
+        use substrate_bn::{AffineG1, Fq, Group, G1};
 
         #[derive(Serialize, Deserialize)]
         struct G1Serde(
@@ -166,17 +179,31 @@ mod serde {
             G1Serde(g1.x(), g1.y(), g1.z()).serialize(s)
         }
 
+        fn check_point<'de, D>(point: &G1) -> Result<(), D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            let mut check = point.clone();
+            check.normalize();
+            AffineG1::new(check.x(), check.y())
+                .map_err(|_e| serde::de::Error::custom("Invalid G1 point"))?;
+            Ok(())
+        }
+
         pub fn deserialize<'de, D>(data: D) -> Result<G1, D::Error>
         where
             D: serde::Deserializer<'de>,
         {
             let g1 = G1Serde::deserialize(data)?;
-            Ok(G1::new(g1.0, g1.1, g1.2))
+            let candidate = G1::new(g1.0, g1.1, g1.2);
+            check_point::<D>(&candidate)?;
+            Ok(candidate)
         }
     }
 
     #[cfg(test)]
     mod should {
+        use ::serde::Deserialize;
         use pretty_assertions::assert_eq;
 
         use super::super::*;
@@ -279,6 +306,28 @@ mod serde {
             ciborium::into_writer(&vk, buffer.as_mut_slice()).unwrap();
             let other = ciborium::from_reader(buffer.as_slice()).unwrap();
             assert_eq!(vk, other);
+        }
+
+        #[test]
+        #[should_panic(expected = "Invalid G1 point")]
+        fn raise_error_if_try_to_deserialize_an_invalid_g1_point() {
+            let json = r#"["1", "2", "3"]"#;
+            #[derive(Deserialize)]
+            #[allow(dead_code)]
+            struct Test(#[cfg_attr(feature = "serde", serde(with = "super::g1"))] G1);
+
+            serde_json::from_str::<Test>(json).unwrap();
+        }
+
+        #[test]
+        #[should_panic(expected = "Invalid G2 point")]
+        fn raise_error_if_try_to_deserialize_an_invalid_g2_point() {
+            let json = r#"[["1", "2"], ["3", "4"], ["5", "6"]]"#;
+            #[derive(Deserialize)]
+            #[allow(dead_code)]
+            struct Test(#[cfg_attr(feature = "serde", serde(with = "super::g2"))] G2);
+
+            serde_json::from_str::<Test>(json).unwrap();
         }
     }
 }
