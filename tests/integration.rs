@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with fflonk_verifier.  If not, see <http://www.gnu.org/licenses/>.
 
-use fflonk_verifier::{verify, AugmentedVerificationKey, Proof};
+use fflonk_verifier::{verify, Proof, VerificationKey};
 use hex_literal::hex;
 
 #[test]
