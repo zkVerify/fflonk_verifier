@@ -26,10 +26,13 @@ use utils::IntoFq as _;
 use utils::IntoFr as _;
 
 pub(crate) mod hash;
+mod key;
 mod macros;
-mod proof_input;
+pub(crate) mod proof_input;
 pub(crate) mod utils;
 
+/// The verification key.
+pub use key::VerificationKey;
 /// The proof data as `U256` fixed array.
 pub use proof_input::ProofData;
 /// The proof data as fixed size bytes array.
@@ -58,28 +61,89 @@ impl TryFrom<&[u8]> for Public {
     }
 }
 
-#[derive(Debug)]
-enum ProofFields {
-    C1,
-    C2,
-    W1,
-    W2,
-    Ql,
-    Qr,
-    Qm,
-    Qo,
-    Qc,
-    S1,
-    S2,
-    S3,
-    A,
-    B,
-    C,
-    Z,
-    Zw,
-    T1w,
-    T2w,
-    Inv,
+/// Verification Error
+#[derive(Snafu, Debug)]
+pub enum VerifyError {
+    /// The provided inverse is wrong
+    #[snafu(display(
+        "Invalid provided inverse is {inverse:?} that's not the inverse of {computed:?}"
+    ))]
+    InvalidInverse { inverse: Fr, computed: Fr },
+    /// Cannot verify the pairing for this proof
+    #[snafu(display("Cannot verify paring"))]
+    NotPairing,
+}
+
+/// Use the given verification key `vk` to verify the `proof`` against the given `pubs` public inputs.
+/// Can fail if:
+/// - the provided inverse in the proof is wrong
+/// - the pair checking is wrong
+pub fn verify(vk: &VerificationKey, proof: &Proof, pubs: &Public) -> Result<(), VerifyError> {
+    let vk_data = vk.into();
+    let challenges = Challenges::build(&vk_data, proof, pubs);
+    let (inverse, l1) = challenges.compute_inverse(&vk_data, proof.inv)?;
+    let pi = Proof::compute_pi(pubs, l1);
+    let r0 = proof.compute_r0(&challenges, &inverse.li_s0_inv);
+    let r1 = proof.compute_r1(&challenges, pi, inverse.zh_inv, &inverse.li_s1_inv);
+    let r2 = proof.compute_r2(
+        &vk_data,
+        &challenges,
+        l1,
+        inverse.zh_inv,
+        &inverse.li_s2_inv,
+    );
+
+    let (f, e, j) = proof.compute_fej(
+        vk_data.vk,
+        &challenges,
+        r0,
+        r1,
+        r2,
+        inverse.den_h1,
+        inverse.den_h2,
+    );
+
+    proof.check_paring(&challenges, vk_data.vk, f, e, j)
+}
+
+struct VkData<'a> {
+    vk: &'a VerificationKey,
+    precomputed: PrecomputedData,
+}
+
+impl<'a> From<&'a VerificationKey> for VkData<'a> {
+    fn from(vk: &'a VerificationKey) -> Self {
+        Self {
+            vk,
+            precomputed: vk.into(),
+        }
+    }
+}
+
+struct PrecomputedData {
+    pub n: Fr,
+    pub w3: [Fr; 2],
+    pub w4: [Fr; 3],
+    pub w8: [Fr; 7],
+}
+
+impl From<&VerificationKey> for PrecomputedData {
+    fn from(vk: &VerificationKey) -> Self {
+        let w3 = [vk.w3, vk.w3 * vk.w3];
+        let w4_2 = vk.w4 * vk.w4;
+        let w4 = [vk.w4, w4_2, vk.w4 * w4_2];
+        let mut w8: [Fr; 7] = [Fr::zero(); 7];
+        w8[0] = vk.w8;
+        for i in 1..7 {
+            w8[i] = w8[i - 1] * vk.w8;
+        }
+        Self {
+            n: 2.into_fr().pow((vk.power as u64).into_fr()),
+            w3,
+            w4,
+            w8,
+        }
+    }
 }
 
 /// The Proof data: use the implemented conversion traits `TryFrom` to build it.
@@ -108,22 +172,6 @@ pub struct Proof {
 }
 
 impl Proof {
-    /// Verifies the proof against the given public inputs. Can fail if:
-    /// - the provided inverse in the proof is wrong
-    /// - the pair checking is wrong
-    pub fn verify(&self, pubs: Public) -> Result<(), VerifyError> {
-        let challenges: Challenges = (self, &pubs).into();
-        let (inverse, l1) = challenges.compute_inverse(self.inv)?;
-        let pi = Self::compute_pi(&pubs, l1);
-        let r0 = self.compute_r0(&challenges, &inverse.li_s0_inv);
-        let r1 = self.compute_r1(&challenges, pi, inverse.zh_inv, &inverse.li_s1_inv);
-        let r2 = self.compute_r2(&challenges, l1, inverse.zh_inv, &inverse.li_s2_inv);
-
-        let (f, e, j) = self.compute_fej(&challenges, r0, r1, r2, inverse.den_h1, inverse.den_h2);
-
-        self.check_paring(&challenges, f, e, j)
-    }
-
     /// Compute public input polynomial evaluation PI(xi)
     fn compute_pi(p: &Public, l1: Fr) -> Fr {
         -l1 * p.0.into_fr()
@@ -168,16 +216,23 @@ impl Proof {
     /// where x = {[h2, h2w3, h2w3^2], [h3, h3w3, h3w3^2]}
     /// and   y = {[C2(h2), C2(h2w3), C2(h2w3^2)], [CChallenges::C0x.into_fr()2(h3), C2(h3w3), C2(h3w3^2)]}
     /// and computing T1(xi) and T2(xi)
-    fn compute_r2(&self, challenges: &Challenges, l1: Fr, zh_inv: Fr, li_s2_inv: &LiS2) -> Fr {
+    fn compute_r2(
+        &self,
+        vk: &VkData,
+        challenges: &Challenges,
+        l1: Fr,
+        zh_inv: Fr,
+        li_s2_inv: &LiS2,
+    ) -> Fr {
         let base = challenges.y.pow(6_u64.into_fr())
-            - (challenges.y.pow(3_u64.into_fr()) * challenges.xi * (Fr::one() + Challenges::w1()))
-            + (challenges.xi * challenges.xi * Challenges::w1());
+            - (challenges.y.pow(3_u64.into_fr()) * challenges.xi * (Fr::one() + vk.vk.w))
+            + (challenges.xi * challenges.xi * vk.vk.w);
 
         let beta_xi = challenges.beta * challenges.xi;
         let t1 = (self.z - Fr::one()) * l1 * zh_inv;
         let t2 = (((self.a + beta_xi + challenges.gamma)
-            * (self.b + beta_xi * Challenges::k1() + challenges.gamma)
-            * (self.c + beta_xi * Challenges::k2() + challenges.gamma)
+            * (self.b + beta_xi * vk.vk.k1 + challenges.gamma)
+            * (self.c + beta_xi * vk.vk.k2 + challenges.gamma)
             * self.z)
             - ((self.a + challenges.beta * self.s1 + challenges.gamma)
                 * (self.b + challenges.beta * self.s2 + challenges.gamma)
@@ -204,8 +259,10 @@ impl Proof {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn compute_fej(
         &self,
+        vk: &VerificationKey,
         challenges: &Challenges,
         r0: Fr,
         r1: Fr,
@@ -219,7 +276,7 @@ impl Proof {
             .fold(Fr::one(), |acc, h0_w8_i| acc * (challenges.y - *h0_w8_i));
         let quotient1 = challenges.alpha * numerator * den_h1;
         let quotient2 = challenges.alpha * challenges.alpha * numerator * den_h2;
-        let f = self.c1 * quotient1 + self.c2 * quotient2 + Challenges::f();
+        let f = self.c1 * quotient1 + self.c2 * quotient2 + vk.c0;
         let e = Challenges::g1() * (r0 + quotient1 * r1 + quotient2 * r2);
         let j = self.w1 * numerator;
 
@@ -229,16 +286,13 @@ impl Proof {
     fn check_paring(
         &self,
         challenges: &Challenges,
+        vk: &VerificationKey,
         f: G1,
         e: G1,
         j: G1,
     ) -> Result<(), VerifyError> {
         let f = f - e - j + self.w2 * challenges.y;
-        if pairing_batch(&[
-            (f, Challenges::g2_pair()),
-            (-self.w2, Challenges::x2_pair()),
-        ]) == Gt::one()
-        {
+        if pairing_batch(&[(f, Challenges::g2_pair()), (-self.w2, vk.x2)]) == Gt::one() {
             Ok(())
         } else {
             Err(VerifyError::NotPairing)
@@ -266,44 +320,7 @@ fn polynomial_eval(
     acc
 }
 
-/// Verification Error
-#[derive(Snafu, Debug)]
-pub enum VerifyError {
-    /// The provided inverse is wrong
-    #[snafu(display(
-        "Invalid provided inverse is {inverse:?} that's not the inverse of {computed:?}"
-    ))]
-    InvalidInverse { inverse: Fr, computed: Fr },
-    /// Cannot verify the pairing for this proof
-    #[snafu(display("Cannot verify paring"))]
-    NotPairing,
-}
-
-trait Constants {
-    const N: U256 = u256!("0000000000000000000000000000000000000000000000000000000001000000"); // 2^24 = 16777216
-    fn n() -> Fr {
-        Self::N.into_fr()
-    }
-
-    // Plonk k1 multiplicative factor to force distinct cosets of H
-    fn k1() -> Fr {
-        2.into_fr()
-    }
-    // Plonk k2 multiplicative factor to force distinct cosets of H
-    fn k2() -> Fr {
-        3.into_fr()
-    }
-
-    const C0X: U256 = u256!("10711a639fed66ba6cd6001188b8fe7285cb9bd01afc1f90598223550aa57e36");
-    const C0Y: U256 = u256!("28c937a4cb758326763015d30fff3568f5cbed932cdc7c411a435d3de04549ef");
-    fn f() -> G1 {
-        let x = Fq::from_u256(Self::C0X).expect("C0x should be a valid Fq point");
-        let y = Fq::from_u256(Self::C0Y).expect("C0y should be a valid Fq point");
-        AffineG1::new(x, y)
-            .expect("(C0x, C0y) Should be a valid G1 point")
-            .into()
-    }
-
+trait FFlonkConstants {
     fn g1() -> G1 {
         AffineG1::new(Fq::one(), 2.into_fq())
             .expect("(1, 2) Should be a valid G1 point")
@@ -323,81 +340,6 @@ trait Constants {
         AffineG2::new(Fq2::new(g2x1, g2x2), Fq2::new(g2y1, g2y2))
             .expect("Should be on curve")
             .into()
-    }
-
-    const X2_X1: U256 = u256!("30441fd1b5d3370482c42152a8899027716989a6996c2535bc9f7fee8aaef79e");
-    const X2_X2: U256 = u256!("26186a2d65ee4d2f9c9a5b91f86597d35f192cd120caf7e935d8443d1938e23d");
-    const X2_Y1: U256 = u256!("054793348f12c0cf5622c340573cb277586319de359ab9389778f689786b1e48");
-    const X2_Y2: U256 = u256!("1970ea81dd6992adfbc571effb03503adbbb6a857f578403c6c40e22d65b3c02");
-
-    fn x2_pair() -> G2 {
-        let x2x1 = Fq::from_u256(Self::X2_X1).expect("X2x1 should be a valid Fq point");
-        let x2x2 = Fq::from_u256(Self::X2_X2).expect("X2x2 should be a valid Fq point");
-        let x2y1 = Fq::from_u256(Self::X2_Y1).expect("X2y1 should be a valid Fq point");
-        let x2y2 = Fq::from_u256(Self::X2_Y2).expect("X2y2 should be a valid Fq point");
-        AffineG2::new(Fq2::new(x2x1, x2x2), Fq2::new(x2y1, x2y2))
-            .expect("Should be on curve")
-            .into()
-    }
-
-    const W1: U256 = u256!("0c9fabc7845d50d2852e2a0371c6441f145e0db82e8326961c25f1e3e32b045b");
-    fn w1() -> Fr {
-        Self::W1.into_fr()
-    }
-    const WR: U256 = u256!("283ce45a2e5b8e4e78f9fbaf5f6a348bfcfaf76dd28e5ca7121b74ef68fdec2e");
-    fn wr() -> Fr {
-        Self::WR.into_fr()
-    }
-
-    const W3: U256 = u256!("30644e72e131a029048b6e193fd84104cc37a73fec2bc5e9b8ca0b2d36636f23");
-    fn w3() -> Fr {
-        Self::W3.into_fr()
-    }
-    const W3_2: U256 = u256!("0000000000000000b3c4d79d41a917585bfc41088d8daaa78b17ea66b99c90dd");
-    fn w3_2() -> Fr {
-        Self::W3_2.into_fr()
-    }
-
-    const W4: U256 = u256!("30644e72e131a029048b6e193fd841045cea24f6fd736bec231204708f703636");
-    fn w4() -> Fr {
-        Self::W4.into_fr()
-    }
-    const W4_2: U256 = u256!("30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000");
-    fn w4_2() -> Fr {
-        Self::W4_2.into_fr()
-    }
-    const W4_3: U256 = u256!("0000000000000000b3c4d79d41a91758cb49c3517c4604a520cff123608fc9cb");
-    fn w4_3() -> Fr {
-        Self::W4_3.into_fr()
-    }
-
-    const W8_1: U256 = u256!("2b337de1c8c14f22ec9b9e2f96afef3652627366f8170a0a948dad4ac1bd5e80");
-    fn w8_1() -> Fr {
-        Self::W8_1.into_fr()
-    }
-    const W8_2: U256 = u256!("30644e72e131a029048b6e193fd841045cea24f6fd736bec231204708f703636");
-    fn w8_2() -> Fr {
-        Self::W8_2.into_fr()
-    }
-    const W8_3: U256 = u256!("1d59376149b959ccbd157ac850893a6f07c2d99b3852513ab8d01be8e846a566");
-    fn w8_3() -> Fr {
-        Self::W8_3.into_fr()
-    }
-    const W8_4: U256 = u256!("30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000");
-    fn w8_4() -> Fr {
-        Self::W8_4.into_fr()
-    }
-    const W8_5: U256 = u256!("0530d09118705106cbb4a786ead16926d5d174e181a26686af5448492e42a181");
-    fn w8_5() -> Fr {
-        Self::W8_5.into_fr()
-    }
-    const W8_6: U256 = u256!("0000000000000000b3c4d79d41a91758cb49c3517c4604a520cff123608fc9cb");
-    fn w8_6() -> Fr {
-        Self::W8_6.into_fr()
-    }
-    const W8_7: U256 = u256!("130b17119778465cfb3acaee30f81dee20710ead41671f568b11d9ab07b95a9b");
-    fn w8_7() -> Fr {
-        Self::W8_7.into_fr()
     }
 }
 
@@ -430,6 +372,101 @@ struct Inverse {
 }
 
 impl Challenges {
+    fn build(vk: &VkData, proof: &Proof, public: &Public) -> Self {
+        let precomputed = &vk.precomputed;
+        let vk = vk.vk;
+
+        let beta = [
+            vk.c0.x().into_u256(),
+            vk.c0.y().into_u256(),
+            public.0,
+            proof.c1.x().into_u256(),
+            proof.c1.y().into_u256(),
+        ]
+        .hash()
+        .into_fr();
+        let gamma = [beta.into_u256()].hash().into_fr();
+        let xi_seed = [
+            gamma.into_u256(),
+            proof.c2.x().into_u256(),
+            proof.c2.y().into_u256(),
+        ]
+        .hash()
+        .into_fr();
+        let xi_seed_2 = xi_seed * xi_seed;
+        let xi_seed_3 = xi_seed * xi_seed_2;
+        let h0_w8 = [
+            xi_seed_3,
+            xi_seed_3 * precomputed.w8[0],
+            xi_seed_3 * precomputed.w8[1],
+            xi_seed_3 * precomputed.w8[2],
+            xi_seed_3 * precomputed.w8[3],
+            xi_seed_3 * precomputed.w8[4],
+            xi_seed_3 * precomputed.w8[5],
+            xi_seed_3 * precomputed.w8[6],
+        ];
+        let xi_seed_6 = xi_seed_3 * xi_seed_3;
+        let h1_w4 = [
+            xi_seed_6,
+            xi_seed_6 * precomputed.w4[0],
+            xi_seed_6 * precomputed.w4[1],
+            xi_seed_6 * precomputed.w4[2],
+        ];
+        let xi_seed_8 = xi_seed_6 * xi_seed_2;
+        let h2_w3 = [
+            xi_seed_8,
+            xi_seed_8 * precomputed.w3[0],
+            xi_seed_8 * precomputed.w3[1],
+        ];
+        let h3_w3_0 = xi_seed_8 * vk.wr;
+        let h3_w3 = [
+            h3_w3_0,
+            h3_w3_0 * precomputed.w3[0],
+            h3_w3_0 * precomputed.w3[1],
+        ];
+        let xi = xi_seed_8 * xi_seed_8 * xi_seed_8;
+        let zh = xi.pow(precomputed.n) - Fr::one();
+        let alpha = [
+            xi_seed.into_u256(),
+            proof.ql.into_u256(),
+            proof.qr.into_u256(),
+            proof.qm.into_u256(),
+            proof.qo.into_u256(),
+            proof.qc.into_u256(),
+            proof.s1.into_u256(),
+            proof.s2.into_u256(),
+            proof.s3.into_u256(),
+            proof.a.into_u256(),
+            proof.b.into_u256(),
+            proof.c.into_u256(),
+            proof.z.into_u256(),
+            proof.zw.into_u256(),
+            proof.t1w.into_u256(),
+            proof.t2w.into_u256(),
+        ]
+        .hash()
+        .into_fr();
+        let y = [
+            alpha.into_u256(),
+            proof.w1.x().into_u256(),
+            proof.w1.y().into_u256(),
+        ]
+        .hash()
+        .into_fr();
+        Self {
+            beta,
+            gamma,
+            h0_w8,
+            h1_w4,
+            h2_w3,
+            h3_w3,
+            xi,
+            zh,
+            alpha,
+            y,
+        }
+    }
+
     fn compute_li_s0(&self) -> LiS0 {
         let den1 = self.h0_w8[0].pow(6_u64.into_fr()) * 8_u64.into_fr();
         [
@@ -454,9 +491,9 @@ impl Challenges {
         ]
     }
 
-    fn compute_li_s2(&self) -> LiS2 {
-        let den1_0 = 3_u64.into_fr() * self.h2_w3[0] * (self.xi - self.xi * Self::w1());
-        let den1_1 = 3_u64.into_fr() * self.h3_w3[0] * (self.xi * Self::w1() - self.xi);
+    fn compute_li_s2(&self, w: Fr) -> LiS2 {
+        let den1_0 = 3_u64.into_fr() * self.h2_w3[0] * (self.xi - self.xi * w);
+        let den1_1 = 3_u64.into_fr() * self.h3_w3[0] * (self.xi * w - self.xi);
         [
             den1_0 * self.h2_w3[0] * (self.y - self.h2_w3[0]),
             den1_0 * self.h2_w3[2] * (self.y - self.h2_w3[1]),
@@ -467,8 +504,8 @@ impl Challenges {
         ]
     }
 
-    fn compute_eval_l1_base(&self) -> Fr {
-        Self::n() * (self.xi - Fr::one())
+    fn compute_eval_l1_base(&self, n: Fr) -> Fr {
+        n * (self.xi - Fr::one())
     }
 
     fn compute_den_h1_base(&self) -> Fr {
@@ -487,7 +524,7 @@ impl Challenges {
         w * (self.y - self.h3_w3[2])
     }
 
-    fn compute_inverse(&self, expected: Fr) -> Result<(Inverse, Fr), VerifyError> {
+    fn compute_inverse(&self, vk: &VkData, expected: Fr) -> Result<(Inverse, Fr), VerifyError> {
         let den_h1_base = self.compute_den_h1_base();
         let den_h2_base = self.compute_den_h2_base();
         let mut data = [Fr::zero(); 22];
@@ -505,13 +542,13 @@ impl Challenges {
             data[cursor] = data[cursor - 1] * elem;
             cursor += 1;
         }
-        let li_s2 = self.compute_li_s2();
+        let li_s2 = self.compute_li_s2(vk.vk.w);
         for elem in li_s2 {
             data[cursor] = data[cursor - 1] * elem;
             cursor += 1;
         }
 
-        let eval_l1_base = self.compute_eval_l1_base();
+        let eval_l1_base = self.compute_eval_l1_base(vk.precomputed.n);
         data[cursor] = data[cursor - 1] * eval_l1_base;
         let value = data[cursor];
 
@@ -565,93 +602,7 @@ impl Challenges {
     }
 }
 
-impl Constants for Challenges {}
-
-impl From<(&Proof, &Public)> for Challenges {
-    fn from((proof, public): (&Proof, &Public)) -> Self {
-        let beta = [
-            Self::C0X,
-            Self::C0Y,
-            public.0,
-            proof.c1.x().into_u256(),
-            proof.c1.y().into_u256(),
-        ]
-        .hash()
-        .into_fr();
-        let gamma = [beta.into_u256()].hash().into_fr();
-        let xi_seed = [
-            gamma.into_u256(),
-            proof.c2.x().into_u256(),
-            proof.c2.y().into_u256(),
-        ]
-        .hash()
-        .into_fr();
-        let xi_seed_2 = xi_seed * xi_seed;
-        let xi_seed_3 = xi_seed * xi_seed_2;
-        let h0_w8 = [
-            xi_seed_3,
-            xi_seed_3 * Self::w8_1(),
-            xi_seed_3 * Self::w8_2(),
-            xi_seed_3 * Self::w8_3(),
-            xi_seed_3 * Self::w8_4(),
-            xi_seed_3 * Self::w8_5(),
-            xi_seed_3 * Self::w8_6(),
-            xi_seed_3 * Self::w8_7(),
-        ];
-        let xi_seed_6 = xi_seed_3 * xi_seed_3;
-        let h1_w4 = [
-            xi_seed_6,
-            xi_seed_6 * Self::w4(),
-            xi_seed_6 * Self::w4_2(),
-            xi_seed_6 * Self::w4_3(),
-        ];
-        let xi_seed_8 = xi_seed_6 * xi_seed_2;
-        let h2_w3 = [xi_seed_8, xi_seed_8 * Self::w3(), xi_seed_8 * Self::w3_2()];
-        let h3_w3_0 = xi_seed_8 * Self::wr();
-        let h3_w3 = [h3_w3_0, h3_w3_0 * Self::w3(), h3_w3_0 * Self::w3_2()];
-        let xi = xi_seed_8 * xi_seed_8 * xi_seed_8;
-        let zh = xi.pow(Self::n()) - Fr::one();
-        let alpha = [
-            xi_seed.into_u256(),
-            proof.ql.into_u256(),
-            proof.qr.into_u256(),
-            proof.qm.into_u256(),
-            proof.qo.into_u256(),
-            proof.qc.into_u256(),
-            proof.s1.into_u256(),
-            proof.s2.into_u256(),
-            proof.s3.into_u256(),
-            proof.a.into_u256(),
-            proof.b.into_u256(),
-            proof.c.into_u256(),
-            proof.z.into_u256(),
-            proof.zw.into_u256(),
-            proof.t1w.into_u256(),
-            proof.t2w.into_u256(),
-        ]
-        .hash()
-        .into_fr();
-        let y = [
-            alpha.into_u256(),
-            proof.w1.x().into_u256(),
-            proof.w1.y().into_u256(),
-        ]
-        .hash()
-        .into_fr();
-        Self {
-            beta,
-            gamma,
-            h0_w8,
-            h1_w4,
-            h2_w3,
-            h3_w3,
-            xi,
-            zh,
-            alpha,
-            y,
-        }
-    }
-}
+impl FFlonkConstants for Challenges {}
 
 #[cfg(test)]
 mod should;

@@ -19,21 +19,11 @@ fn main() {
     divan::main();
 }
 
-use fflonk_verifier::Proof;
+use fflonk_verifier::{verify, Proof, VerificationKey};
 use hex_literal::hex;
 
-// Define a `fibonacci` function and register it for benchmarking.
-#[divan::bench]
-fn fflonk_verifier() -> bool {
-    fn compute(data: [u8; 768], pubs: [u8; 32]) -> bool {
-        let proof = Proof::try_from(&data).unwrap();
-        let pubs = pubs.into();
-
-        proof.verify(pubs).is_ok()
-    }
-
-    let data = hex!(
-        r#"
+static VALID_PROOF_DATA: [u8; 768] = hex!(
+    r#"
         283e3f25323d02dabdb94a897dc2697a3b930d8781381ec574af89a201a91d5a
         2c2808c59f5c736ff728eedfea58effc2443722e78b2eb4e6759a278e9246d60
         0f9c56dc88e043ce0b90c402e96b1f4b1a246f4d0d69a4c340bc910e1f2fd805
@@ -59,8 +49,24 @@ fn fflonk_verifier() -> bool {
         0ada5414d66387211eec80d7d9d48498efa1e646d64bb1bf8775b3796a9fd0bf
         0fdf8244018ce57b018c093e2f75ed77d8dbdb1a7b60a2da671de2efe5f6b9d7
         "#
-    );
-    let pubs = hex!("0d69b94acdfaca5bacc248a60b35b925a2374644ce0c1205db68228c8921d9d9");
+);
+static VALID_PUBS_DATA: [u8; 32] =
+    hex!("0d69b94acdfaca5bacc248a60b35b925a2374644ce0c1205db68228c8921d9d9");
 
-    compute(divan::black_box(data), divan::black_box(pubs))
+#[divan::bench]
+fn fflonk_verifier_with_base_key() -> bool {
+    fn compute(vk: VerificationKey, data: [u8; 768], pubs: [u8; 32]) -> bool {
+        let proof = Proof::try_from(&data).unwrap();
+        let pubs = pubs.into();
+
+        verify(&vk, &proof, &pubs).is_ok()
+    }
+
+    let vk = VerificationKey::default();
+
+    compute(
+        divan::black_box(vk),
+        divan::black_box(VALID_PROOF_DATA),
+        divan::black_box(VALID_PUBS_DATA),
+    )
 }

@@ -17,7 +17,7 @@
 use snafu::Snafu;
 use substrate_bn::{arith::U256, AffineG1, FieldError, Fq, Fr, GroupError, G1};
 
-use crate::{Proof, ProofFields};
+use crate::Proof;
 
 pub type ProofData = [U256; 24];
 pub type ProofRawData = [u8; 32 * 24];
@@ -34,6 +34,30 @@ pub enum ProofDataError {
         field: &'static str,
         error: GroupError,
     },
+}
+
+#[derive(Debug)]
+pub enum ProofFields {
+    C1,
+    C2,
+    W1,
+    W2,
+    Ql,
+    Qr,
+    Qm,
+    Qo,
+    Qc,
+    S1,
+    S2,
+    S3,
+    A,
+    B,
+    C,
+    Z,
+    Zw,
+    T1w,
+    T2w,
+    Inv,
 }
 
 impl TryFrom<&ProofData> for Proof {
@@ -181,7 +205,7 @@ fn read_fr(field: ProofFields, data: U256) -> Result<Fr, ProofDataError> {
 }
 
 #[cfg(test)]
-mod tests {
+mod should {
     use rstest::rstest;
 
     use crate::macros::{u256, u256s};

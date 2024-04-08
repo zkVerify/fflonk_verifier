@@ -1,18 +1,20 @@
 # FFlonk verifier
 
-A rust implementation of Polygon's FFlonk verifier for CDK prover. That's not a generic implementation but
-use the specific constants from the solidity contract. The proof is 768 bytes (24 big-endian unsigned 256
-bits integers) and the expected public input is 32 bytes (a big-endian unsigned 256 bits integer). To build 
-the proof and public input from the raw bytes you can use the implemented `TryFrom` trait.
+A Rust implementation of Polygon's FFlonk verifier for CDK prover. The proof is 768 bytes (24 big-endian
+unsigned 256 bits integers) and the expected public input is 32 bytes (a big-endian unsigned 256 bits integer).
+To build the proof and public input from the raw bytes you can use the implemented `TryFrom` trait.
 
 The solidity reference implementation from Polygon
 [is in solidity](https://github.com/0xPolygon/cdk-validium-contracts/blob/cecd53e0b1e39cd9df1a79215eedbbb636b4e0a7/contracts/verifiers/FflonkVerifier.sol)
-where the [constants come from fork-id 6 PR](https://github.com/0xPolygon/cdk-validium-contracts/compare/v0.0.1...v0.0.2#diff-464c9f4dd9c1b875ceb2aace2024dd3ef9dfea0d4b30e9ef8cf9ca3c743671f2R51)
+where the [verfication key come from fork-id 6 PR](https://github.com/0xPolygon/cdk-validium-contracts/compare/v0.0.1...v0.0.2#diff-464c9f4dd9c1b875ceb2aace2024dd3ef9dfea0d4b30e9ef8cf9ca3c743671f2R51)
+
+You can also deserialize verification keys (the circom's json format is supported): in this case you should
+use `serde` feature.
 
 ## Usage
 
 ```rust
-use fflonk_verifier::{Proof, Public};
+use fflonk_verifier::{verify, VerificationKey, Proof} ;
 # use hex_literal::hex;
 
 let data = hex!(
@@ -43,8 +45,9 @@ let data = hex!(
         0fdf8244018ce57b018c093e2f75ed77d8dbdb1a7b60a2da671de2efe5f6b9d7
         "#
 );
+let vk = VerificationKey::default();
 let proof = Proof::try_from(&data).unwrap();
 let pubs = hex!("0d69b94acdfaca5bacc248a60b35b925a2374644ce0c1205db68228c8921d9d9").into();
 
-proof.verify(pubs).unwrap();
+verify(&vk, &proof, &pubs).unwrap();
 ```
