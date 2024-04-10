@@ -14,7 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with fflonk_verifier.  If not, see <http://www.gnu.org/licenses/>.
 
-use fflonk_verifier::{verify, Proof, VerificationKey};
+use std::{fs};
+use fflonk_verifier::{verify, verify_proof, Proof, VerificationKey};
 use hex_literal::hex;
 
 #[test]
@@ -52,4 +53,28 @@ fn should_verify_valid_proof() {
     let pubs = hex!("0d69b94acdfaca5bacc248a60b35b925a2374644ce0c1205db68228c8921d9d9").into();
 
     verify(&key.into(), &proof, &pubs).unwrap();
+}
+
+#[test]
+fn should_verify_external_c_valid_proof_from_files() {
+
+    let fflonk_proof = fs::read("./tests/data/fflonk.proof").unwrap_or_else(|err| {
+        eprintln!("Error reading file: {}", err);
+        Vec::new()
+    });
+    let fflonk_proof_final: [u8; 768] = fflonk_proof.as_slice().try_into().unwrap_or([0; 768]);
+    let fflonk_proof_slice: &[u8] = &fflonk_proof_final;
+    let fflonk_proof_ptr: *const u8 = fflonk_proof_slice.as_ptr();
+
+
+    let public_inputs = fs::read("./tests/data/public_inputs").unwrap_or_else(|err| {
+        eprintln!("Error reading file: {}", err);
+        Vec::new()
+    });
+    let public_inputs_final: [u8; 32] = public_inputs.as_slice().try_into().unwrap_or([0; 32]);
+    let public_inputs_slice: &[u8] = &public_inputs_final;
+    let public_inputs_ptr: *const u8 = public_inputs_slice.as_ptr();
+
+    let result = verify_proof(fflonk_proof_ptr, public_inputs_ptr);
+    assert!(result);
 }

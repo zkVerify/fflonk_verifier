@@ -35,3 +35,6 @@ harness = false
 default = ["std"]
 serde = ["dep:serde", "dep:ethnum"]
 std = ["sha3/std", "digest/std", "snafu/std", "serde?/std"]
+
+[lib]
+crate-type = ["cdylib", "staticlib", "lib"]

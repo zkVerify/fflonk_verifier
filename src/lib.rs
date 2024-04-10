@@ -604,5 +604,36 @@ impl Challenges {
 
 impl FFlonkConstants for Challenges {}
 
+#[no_mangle]
+pub extern "C" fn verify_proof(
+    proof: *const u8,
+    pubs: *const u8
+) -> bool {
+    let vk = VerificationKey::default();
+
+    let proof_slice = unsafe {
+        assert!(!pubs.is_null());
+        std::slice::from_raw_parts(proof, 768)
+    };
+    let proof_raw_data: ProofRawData = proof_slice.try_into().unwrap_or_else(|_| {
+        eprintln!("Slice does not have the correct size (768 bytes), using default value.");
+        [0; 768] // Provide a default value (e.g., an array of zeros)
+    });
+
+    let final_proof = Proof::try_from(&proof_raw_data).unwrap();
+
+    let pubs_slice = unsafe {
+        assert!(!pubs.is_null());
+        std::slice::from_raw_parts(pubs, 32)
+    };
+    let public_inputs = Public::try_from(pubs_slice).unwrap();
+
+    match verify(&vk.into(), &final_proof, &public_inputs) {
+        Ok(_) => true,
+        Err(_) => false
+    }
+}
+
 #[cfg(test)]
 mod should;
+

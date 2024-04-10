@@ -27,7 +27,7 @@ impl Hasher for [u8] {
     }
 }
 
-const MAX_HASH_LEN: usize = 25;
+pub const MAX_HASH_LEN: usize = 25;
 
 impl Hasher for &[U256] {
     fn hash(&self) -> [u8; 32] {

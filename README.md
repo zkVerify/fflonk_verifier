@@ -51,3 +51,8 @@ let pubs = hex!("0d69b94acdfaca5bacc248a60b35b925a2374644ce0c1205db68228c8921d9d
 
 verify(&vk, &proof, &pubs).unwrap();
 ```
+### C Bindings
+Run this command to regenerate the c bindings:
+```bash
+cbindgen --config cbindgen.toml --lang c --crate fflonk_verifier --output fflonk.h
+```
