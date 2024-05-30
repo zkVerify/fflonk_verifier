@@ -23,7 +23,7 @@ use super::*;
 
 #[fixture]
 fn valid_proof() -> Proof {
-    ProofData::try_from(u256s![
+    ProofData::from(u256s![
         "283e3f25323d02dabdb94a897dc2697a3b930d8781381ec574af89a201a91d5a",
         "2c2808c59f5c736ff728eedfea58effc2443722e78b2eb4e6759a278e9246d60",
         "0f9c56dc88e043ce0b90c402e96b1f4b1a246f4d0d69a4c340bc910e1f2fd805",
@@ -49,7 +49,6 @@ fn valid_proof() -> Proof {
         "0ada5414d66387211eec80d7d9d48498efa1e646d64bb1bf8775b3796a9fd0bf",
         "0fdf8244018ce57b018c093e2f75ed77d8dbdb1a7b60a2da671de2efe5f6b9d7",
     ])
-    .unwrap()
     .try_into()
     .unwrap()
 }
@@ -70,7 +69,7 @@ fn compute_valid_check_paring(vk: VerificationKey, valid_proof: Proof, valid_pub
 
     let challenges = Challenges::build(&vk_data, &valid_proof, &valid_pubs);
     let (inverse, l1) = challenges
-        .compute_inverse(&vk_data, valid_proof.inv)
+        .compute_inverse(&vk_data, valid_proof.evaluations.inv)
         .unwrap();
     let pi = Proof::compute_pi(&valid_pubs, l1);
     let r0 = valid_proof.compute_r0(&challenges, &inverse.li_s0_inv);
@@ -99,7 +98,7 @@ fn verify_valid_proof(vk: VerificationKey, valid_proof: Proof, valid_pubs: Publi
 #[cfg(feature = "std")]
 #[cfg(feature = "serde")]
 mod verify_valid_deserialized_proof {
-    use serde::Deserialize;
+    use ::serde::Deserialize;
 
     use super::*;
     use std::path::PathBuf;
@@ -125,7 +124,7 @@ mod verify_valid_deserialized_proof {
     }
 }
 mod reject {
-    use self::proof_input::ProofFields;
+    use crate::proof::ProofFields;
 
     use super::*;
 
@@ -139,64 +138,64 @@ mod reject {
             let random = Fr::random(rng);
             match self {
                 ProofFields::C1 => {
-                    proof.c1 = proof.c1 * random;
+                    proof.polynomials.c1 = proof.polynomials.c1 * random;
                 }
                 ProofFields::C2 => {
-                    proof.c2 = proof.c2 * random;
+                    proof.polynomials.c2 = proof.polynomials.c2 * random;
                 }
                 ProofFields::W1 => {
-                    proof.w1 = proof.w1 * random;
+                    proof.polynomials.w1 = proof.polynomials.w1 * random;
                 }
                 ProofFields::W2 => {
-                    proof.w2 = proof.w2 * random;
+                    proof.polynomials.w2 = proof.polynomials.w2 * random;
                 }
                 ProofFields::Ql => {
-                    proof.ql = random;
+                    proof.evaluations.ql = random;
                 }
                 ProofFields::Qr => {
-                    proof.qr = random;
+                    proof.evaluations.qr = random;
                 }
                 ProofFields::Qm => {
-                    proof.qm = random;
+                    proof.evaluations.qm = random;
                 }
                 ProofFields::Qo => {
-                    proof.qo = random;
+                    proof.evaluations.qo = random;
                 }
                 ProofFields::Qc => {
-                    proof.qc = random;
+                    proof.evaluations.qc = random;
                 }
                 ProofFields::S1 => {
-                    proof.s1 = random;
+                    proof.evaluations.s1 = random;
                 }
                 ProofFields::S2 => {
-                    proof.s2 = random;
+                    proof.evaluations.s2 = random;
                 }
                 ProofFields::S3 => {
-                    proof.s3 = random;
+                    proof.evaluations.s3 = random;
                 }
                 ProofFields::A => {
-                    proof.a = random;
+                    proof.evaluations.a = random;
                 }
                 ProofFields::B => {
-                    proof.b = random;
+                    proof.evaluations.b = random;
                 }
                 ProofFields::C => {
-                    proof.c = random;
+                    proof.evaluations.c = random;
                 }
                 ProofFields::Z => {
-                    proof.z = random;
+                    proof.evaluations.z = random;
                 }
                 ProofFields::Zw => {
-                    proof.zw = random;
+                    proof.evaluations.zw = random;
                 }
                 ProofFields::T1w => {
-                    proof.t1w = random;
+                    proof.evaluations.t1w = random;
                 }
                 ProofFields::T2w => {
-                    proof.t2w = random;
+                    proof.evaluations.t2w = random;
                 }
                 ProofFields::Inv => {
-                    proof.inv = random;
+                    proof.evaluations.inv = random;
                 }
             }
             proof
@@ -317,7 +316,7 @@ mod reject {
     ) {
         let vk = VerificationKey::default();
 
-        proof.inv = Fr::random(&mut rng);
+        proof.evaluations.inv = Fr::random(&mut rng);
         verify(&vk, &proof, &valid_pubs).unwrap()
     }
 }

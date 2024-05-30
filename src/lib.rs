@@ -28,15 +28,18 @@ use utils::IntoFr as _;
 pub(crate) mod hash;
 mod key;
 mod macros;
-pub(crate) mod proof_input;
+mod proof;
+pub(crate) mod serde;
 pub(crate) mod utils;
+
+pub use proof::Proof;
 
 /// The verification key.
 pub use key::VerificationKey;
 /// The proof data as `U256` fixed array.
-pub use proof_input::ProofData;
+pub use proof::ProofData;
 /// The proof data as fixed size bytes array.
-pub use proof_input::ProofRawData;
+pub use proof::ProofRawData;
 
 /// The public input data.
 pub struct Public(U256);
@@ -81,7 +84,7 @@ pub enum VerifyError {
 pub fn verify(vk: &VerificationKey, proof: &Proof, pubs: &Public) -> Result<(), VerifyError> {
     let vk_data = vk.into();
     let challenges = Challenges::build(&vk_data, proof, pubs);
-    let (inverse, l1) = challenges.compute_inverse(&vk_data, proof.inv)?;
+    let (inverse, l1) = challenges.compute_inverse(&vk_data, proof.evaluations.inv)?;
     let pi = Proof::compute_pi(pubs, l1);
     let r0 = proof.compute_r0(&challenges, &inverse.li_s0_inv);
     let r1 = proof.compute_r1(&challenges, pi, inverse.zh_inv, &inverse.li_s1_inv);
@@ -146,31 +149,6 @@ impl From<&VerificationKey> for PrecomputedData {
     }
 }
 
-/// The Proof data: use the implemented conversion traits `TryFrom` to build it.
-pub struct Proof {
-    pub c1: G1,
-    pub c2: G1,
-    pub w1: G1,
-    pub w2: G1,
-
-    pub ql: Fr,
-    pub qr: Fr,
-    pub qm: Fr,
-    pub qo: Fr,
-    pub qc: Fr,
-    pub s1: Fr,
-    pub s2: Fr,
-    pub s3: Fr,
-    pub a: Fr,
-    pub b: Fr,
-    pub c: Fr,
-    pub z: Fr,
-    pub zw: Fr,
-    pub t1w: Fr,
-    pub t2w: Fr,
-    pub inv: Fr,
-}
-
 impl Proof {
     /// Compute public input polynomial evaluation PI(xi)
     fn compute_pi(p: &Public, l1: Fr) -> Fr {
@@ -183,9 +161,17 @@ impl Proof {
     /// and computing C0(xi)
     fn compute_r0(&self, challenges: &Challenges, li_s0_inv: &LiS0) -> Fr {
         let base = challenges.y.pow(8_u64.into_fr()) - challenges.xi;
+        let evaluations = &self.evaluations;
 
         let coefficients = [
-            self.ql, self.qr, self.qo, self.qm, self.qc, self.s1, self.s2, self.s3,
+            evaluations.ql,
+            evaluations.qr,
+            evaluations.qo,
+            evaluations.qm,
+            evaluations.qc,
+            evaluations.s1,
+            evaluations.s2,
+            evaluations.s3,
         ];
 
         // Compute c0Value = ql + (h0w8[i]) qr + (h0w8[i])^2 qo + (h0w8[i])^3 qm + (h0w8[i])^4 qc +
@@ -199,15 +185,16 @@ impl Proof {
     /// and computing T0(xi)
     fn compute_r1(&self, challenges: &Challenges, pi: Fr, zh_inv: Fr, li_s1_inv: &LiS1) -> Fr {
         let base = challenges.y.pow(4_u64.into_fr()) - challenges.xi;
+        let evaluations = &self.evaluations;
 
-        let t0 = ((self.ql * self.a)
-            + (self.qr * self.b)
-            + (self.qm * self.a * self.b)
-            + (self.qo * self.c)
-            + self.qc
+        let t0 = ((evaluations.ql * evaluations.a)
+            + (evaluations.qr * evaluations.b)
+            + (evaluations.qm * evaluations.a * evaluations.b)
+            + (evaluations.qo * evaluations.c)
+            + evaluations.qc
             + pi)
             * zh_inv;
-        let coefficients = [self.a, self.b, self.c, t0];
+        let coefficients = [evaluations.a, evaluations.b, evaluations.c, t0];
 
         polynomial_eval(base, &coefficients, &challenges.h1_w4, li_s1_inv, None)
     }
@@ -227,20 +214,21 @@ impl Proof {
         let base = challenges.y.pow(6_u64.into_fr())
             - (challenges.y.pow(3_u64.into_fr()) * challenges.xi * (Fr::one() + vk.vk.w))
             + (challenges.xi * challenges.xi * vk.vk.w);
+        let evaluations = &self.evaluations;
 
         let beta_xi = challenges.beta * challenges.xi;
-        let t1 = (self.z - Fr::one()) * l1 * zh_inv;
-        let t2 = (((self.a + beta_xi + challenges.gamma)
-            * (self.b + beta_xi * vk.vk.k1 + challenges.gamma)
-            * (self.c + beta_xi * vk.vk.k2 + challenges.gamma)
-            * self.z)
-            - ((self.a + challenges.beta * self.s1 + challenges.gamma)
-                * (self.b + challenges.beta * self.s2 + challenges.gamma)
-                * (self.c + challenges.beta * self.s3 + challenges.gamma)
-                * self.zw))
+        let t1 = (evaluations.z - Fr::one()) * l1 * zh_inv;
+        let t2 = (((evaluations.a + beta_xi + challenges.gamma)
+            * (evaluations.b + beta_xi * vk.vk.k1 + challenges.gamma)
+            * (evaluations.c + beta_xi * vk.vk.k2 + challenges.gamma)
+            * evaluations.z)
+            - ((evaluations.a + challenges.beta * evaluations.s1 + challenges.gamma)
+                * (evaluations.b + challenges.beta * evaluations.s2 + challenges.gamma)
+                * (evaluations.c + challenges.beta * evaluations.s3 + challenges.gamma)
+                * evaluations.zw))
             * zh_inv;
 
-        let coefficients = [self.z, t1, t2];
+        let coefficients = [evaluations.z, t1, t2];
         let gamma = polynomial_eval(
             base,
             &coefficients,
@@ -249,7 +237,7 @@ impl Proof {
             None,
         );
 
-        let coefficients = [self.zw, self.t1w, self.t2w];
+        let coefficients = [evaluations.zw, evaluations.t1w, evaluations.t2w];
         polynomial_eval(
             base,
             &coefficients,
@@ -270,15 +258,16 @@ impl Proof {
         den_h1: Fr,
         den_h2: Fr,
     ) -> (G1, G1, G1) {
+        let polynomials = &self.polynomials;
         let numerator = challenges
             .h0_w8
             .iter()
             .fold(Fr::one(), |acc, h0_w8_i| acc * (challenges.y - *h0_w8_i));
         let quotient1 = challenges.alpha * numerator * den_h1;
         let quotient2 = challenges.alpha * challenges.alpha * numerator * den_h2;
-        let f = self.c1 * quotient1 + self.c2 * quotient2 + vk.c0;
+        let f = polynomials.c1 * quotient1 + polynomials.c2 * quotient2 + vk.c0;
         let e = Challenges::g1() * (r0 + quotient1 * r1 + quotient2 * r2);
-        let j = self.w1 * numerator;
+        let j = polynomials.w1 * numerator;
 
         (f, e, j)
     }
@@ -291,8 +280,9 @@ impl Proof {
         e: G1,
         j: G1,
     ) -> Result<(), VerifyError> {
-        let f = f - e - j + self.w2 * challenges.y;
-        if pairing_batch(&[(f, Challenges::g2_pair()), (-self.w2, vk.x2)]) == Gt::one() {
+        let polynomials = &self.polynomials;
+        let f = f - e - j + polynomials.w2 * challenges.y;
+        if pairing_batch(&[(f, Challenges::g2_pair()), (-polynomials.w2, vk.x2)]) == Gt::one() {
             Ok(())
         } else {
             Err(VerifyError::NotPairing)
@@ -375,21 +365,25 @@ impl Challenges {
     fn build(vk: &VkData, proof: &Proof, public: &Public) -> Self {
         let precomputed = &vk.precomputed;
         let vk = vk.vk;
+        let Proof {
+            ref polynomials,
+            ref evaluations,
+        } = proof;
 
         let beta = [
             vk.c0.x().into_u256(),
             vk.c0.y().into_u256(),
             public.0,
-            proof.c1.x().into_u256(),
-            proof.c1.y().into_u256(),
+            polynomials.c1.x().into_u256(),
+            polynomials.c1.y().into_u256(),
         ]
         .hash()
         .into_fr();
         let gamma = [beta.into_u256()].hash().into_fr();
         let xi_seed = [
             gamma.into_u256(),
-            proof.c2.x().into_u256(),
-            proof.c2.y().into_u256(),
+            polynomials.c2.x().into_u256(),
+            polynomials.c2.y().into_u256(),
         ]
         .hash()
         .into_fr();
@@ -428,28 +422,28 @@ impl Challenges {
         let zh = xi.pow(precomputed.n) - Fr::one();
         let alpha = [
             xi_seed.into_u256(),
-            proof.ql.into_u256(),
-            proof.qr.into_u256(),
-            proof.qm.into_u256(),
-            proof.qo.into_u256(),
-            proof.qc.into_u256(),
-            proof.s1.into_u256(),
-            proof.s2.into_u256(),
-            proof.s3.into_u256(),
-            proof.a.into_u256(),
-            proof.b.into_u256(),
-            proof.c.into_u256(),
-            proof.z.into_u256(),
-            proof.zw.into_u256(),
-            proof.t1w.into_u256(),
-            proof.t2w.into_u256(),
+            evaluations.ql.into_u256(),
+            evaluations.qr.into_u256(),
+            evaluations.qm.into_u256(),
+            evaluations.qo.into_u256(),
+            evaluations.qc.into_u256(),
+            evaluations.s1.into_u256(),
+            evaluations.s2.into_u256(),
+            evaluations.s3.into_u256(),
+            evaluations.a.into_u256(),
+            evaluations.b.into_u256(),
+            evaluations.c.into_u256(),
+            evaluations.z.into_u256(),
+            evaluations.zw.into_u256(),
+            evaluations.t1w.into_u256(),
+            evaluations.t2w.into_u256(),
         ]
         .hash()
         .into_fr();
         let y = [
             alpha.into_u256(),
-            proof.w1.x().into_u256(),
-            proof.w1.y().into_u256(),
+            polynomials.w1.x().into_u256(),
+            polynomials.w1.y().into_u256(),
         ]
         .hash()
         .into_fr();
