@@ -60,6 +60,7 @@ impl IntoFr for u64 {
     }
 }
 
+#[allow(unused)]
 pub(crate) trait IntoU256 {
     fn into_u256(self) -> U256;
 }

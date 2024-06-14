@@ -51,3 +51,98 @@ let pubs = hex!("0d69b94acdfaca5bacc248a60b35b925a2374644ce0c1205db68228c8921d9d
 
 verify(&vk, &proof, &pubs).unwrap();
 ```
+
+## Bins
+
+This crate also provide two simple binaries:
+
+- `proof-converter`: to convert proofs against different formats
+- `verifier`: to verify proofs
+
+To compile and install them use
+
+```sh
+cargo cargo install --features bins --path .
+```
+
+or
+
+- `cargo build --features bins` : to just compile and leave the binaries in
+`target/debug` folder.
+- `cargo build --release --features bins` : to just compile in release mode
+and leave the binaries in `target/release` folder.
+
+```text
+$ proof-converter --help
+Converts fflonk-proofs formats
+
+Usage: proof-converter [OPTIONS] <INPUT> [OUTPUT]
+
+Arguments:
+  <INPUT>
+          Input file
+
+  [OUTPUT]
+          Output file [or stdout if not specified]
+
+Options:
+  -i, --in-fmt <FORMAT>
+          Input type
+          
+          [default: json]
+
+          Possible values:
+          - json:       Json
+          - bytes:      Bytes
+          - hex-string: Hex String
+
+  -o, --out-fmt <FORMAT>
+          Output type
+          
+          [default: hex-string]
+
+          Possible values:
+          - json:       Json
+          - bytes:      Bytes
+          - hex-string: Hex String
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+```
+
+```text
+$ verifier --help
+Verify fflonk-proofs
+
+Usage: verifier [OPTIONS] <VK> <PROOF> <PUBS>
+
+Arguments:
+  <VK>
+          Verification Key Json File
+
+  <PROOF>
+          Proof File
+
+  <PUBS>
+          Public input hex string
+
+Options:
+  -p, --proof-fmt <FORMAT>
+          Proof format
+          
+          [default: hex-string]
+
+          Possible values:
+          - json:       Json
+          - bytes:      Bytes
+          - hex-string: Hex String
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+```
