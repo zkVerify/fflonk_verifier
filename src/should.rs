@@ -1,4 +1,4 @@
-// Copyright 2024, The Horizen Foundation
+// Copyright 2024, Horizen Labs, Inc.
 // Copyright 2021 0KIMS association.
 //
 // fflonk_verifier is free software: you can redistribute it and/or modify
