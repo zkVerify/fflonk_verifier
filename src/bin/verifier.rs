@@ -48,10 +48,17 @@ mod formats;
 
 pub fn main() -> Result<()> {
     let cli = Cli::parse();
-    let proof = std::fs::read(&cli.proof)
-        .with_context(|| format!("Failed to read proof data from {:?}", &cli.proof))
-        .and_then(|data| cli.proof_fmt.read_poof(data.as_slice()))
-        .with_context(|| format!("Failed to read proof from file {:?}", &cli.proof))?;
+
+    let proof = cli
+        .proof_fmt
+        .read_poof(
+            cli.proof
+                .to_str()
+                .expect("Failed to convert to string")
+                .as_bytes(),
+        )
+        .with_context(|| "Failed to parse proof data from CLI argument")?;
+
     let vk: VerificationKey = serde_json::from_reader(
         std::fs::File::open(&cli.vk)
             .with_context(|| format!("Failed to open verification key file {:?}", &cli.vk))?,
