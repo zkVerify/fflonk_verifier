@@ -10,9 +10,9 @@ fi
 # absolute path to project from relative location of this script
 workdir="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." &> /dev/null && pwd )"
 # defaults if not provided via env
-DOCKER_ORG="${DOCKER_ORG:-zencash}"
-IMAGE_NAME="${IMAGE_NAME:-sc-ci-base}"
-IMAGE_TAG="${IMAGE_TAG:-focal_rust-stable_latest}"
+DOCKER_ORG="${DOCKER_ORG:-horizenlabs}"
+IMAGE_NAME="${IMAGE_NAME:-ci-base}"
+IMAGE_TAG="${IMAGE_TAG:-noble_rust-stable_latest}"
 image="${DOCKER_ORG}/${IMAGE_NAME}:${IMAGE_TAG}"
 export CARGO_AUDIT_EXIT_ON_ERROR="${CARGO_AUDIT_EXIT_ON_ERROR:-true}"
 export NEED_CARGO_README="${NEED_CARGO_README:-true}"
