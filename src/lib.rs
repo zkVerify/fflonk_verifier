@@ -75,13 +75,23 @@ pub enum VerifyError {
     /// Cannot verify the pairing for this proof
     #[snafu(display("Cannot verify paring"))]
     NotPairing,
+    /// The public input is not a canonical field element (>= r)
+    #[snafu(display("Public input is not a canonical field element"))]
+    InvalidPublicInput,
 }
 
 /// Use the given verification key `vk` to verify the `proof`` against the given `pubs` public inputs.
 /// Can fail if:
+/// - the public input is not a canonical field element
 /// - the provided inverse in the proof is wrong
 /// - the pair checking is wrong
 pub fn verify(vk: &VerificationKey, proof: &Proof, pubs: &Public) -> Result<(), VerifyError> {
+    // The raw public input is hashed into `beta`, while `compute_pi` reduces it mod r. Accepting
+    // `v + k*r` would give one field element several valid encodings, so reject it here, as
+    // `read_fr` already does for proof scalars.
+    if Fr::new(pubs.0).is_none() {
+        return Err(VerifyError::InvalidPublicInput);
+    }
     let vk_data = vk.into();
     let challenges = Challenges::build(&vk_data, proof, pubs);
     let (inverse, l1) = challenges.compute_inverse(&vk_data, proof.evaluations.inv)?;

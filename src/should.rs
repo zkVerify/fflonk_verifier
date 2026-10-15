@@ -319,4 +319,17 @@ mod reject {
         proof.evaluations.inv = Fr::random(&mut rng);
         verify(&vk, &proof, &valid_pubs).unwrap()
     }
+
+    #[rstest]
+    #[case::valid_pubs_plus_r(u256!(
+        "3dce07bdaf2c6a8565128e5c8cb71182ca6b2e8d47c582971f4a18207921d9da"
+    ))]
+    #[case::r(u256!("30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001"))]
+    #[case::max(u256!("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"))]
+    #[should_panic(expected = "InvalidPublicInput")]
+    fn a_non_canonical_public_input(valid_proof: Proof, #[case] pubs: U256) {
+        let vk = VerificationKey::default();
+
+        verify(&vk, &valid_proof, &pubs.into()).unwrap()
+    }
 }
