@@ -23,7 +23,7 @@ mod formats;
 
 #[fixture]
 fn bin() -> Command {
-    test_bin::get_test_bin("verifier")
+    test_bin::get_test_bin!("verifier")
 }
 
 mod should {
