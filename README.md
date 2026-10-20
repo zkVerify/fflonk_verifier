@@ -3,6 +3,8 @@
 A Rust implementation of Polygon's FFlonk verifier for CDK prover. The proof is 768 bytes (24 big-endian
 unsigned 256 bits integers) and the expected public input is 32 bytes (a big-endian unsigned 256 bits integer).
 To build the proof and public input from the raw bytes you can use the implemented `TryFrom` trait.
+The public input must be a canonical BN254 scalar field element (less than the field modulus r),
+otherwise the conversion fails.
 
 The solidity reference implementation from Polygon
 [is in solidity](https://github.com/0xPolygon/cdk-validium-contracts/blob/cecd53e0b1e39cd9df1a79215eedbbb636b4e0a7/contracts/verifiers/FflonkVerifier.sol)
@@ -14,7 +16,7 @@ use `serde` feature.
 ## Usage
 
 ```rust
-use fflonk_verifier::{verify, VerificationKey, Proof} ;
+use fflonk_verifier::{verify, Public, VerificationKey, Proof} ;
 # use hex_literal::hex;
 
 let data = hex!(
@@ -47,7 +49,7 @@ let data = hex!(
 );
 let vk = VerificationKey::default();
 let proof = Proof::try_from(&data).unwrap();
-let pubs = hex!("0d69b94acdfaca5bacc248a60b35b925a2374644ce0c1205db68228c8921d9d9").into();
+let pubs = Public::try_from(hex!("0d69b94acdfaca5bacc248a60b35b925a2374644ce0c1205db68228c8921d9d9")).unwrap();
 
 verify(&vk, &proof, &pubs).unwrap();
 ```

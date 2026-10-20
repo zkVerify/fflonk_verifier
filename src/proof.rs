@@ -348,6 +348,8 @@ mod should {
     use rstest::rstest;
 
     use crate::macros::{u256, u256s};
+    use crate::utils::IntoU256 as _;
+    use crate::FR_MODULUS;
 
     use super::*;
 
@@ -436,8 +438,8 @@ mod should {
     #[should_panic(expected = r#""w2.y", error: NotMember"#)]
     #[case::invalid_field_curve(7, u256!("fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0"))]
     #[should_panic(expected = r#""ql", error: NotMember"#)]
-    #[case::invalid_field_edge_case(8, u256!("30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001"))]
-    #[case::valid_field_edge_case(8, u256!("30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000"))]
+    #[case::invalid_field_edge_case(8, FR_MODULUS.into_u256())]
+    #[case::valid_field_edge_case(8, (FR_MODULUS - 1).into_u256())]
     fn reject_invalid_proof_data(#[case] id: usize, #[case] value: U256) {
         let mut proof_data = PROOF_DATA.clone();
         proof_data.0[id] = value;

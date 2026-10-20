@@ -57,7 +57,7 @@ static VALID_PUBS_DATA: [u8; 32] =
 fn fflonk_verifier_with_base_key() -> bool {
     fn compute(vk: VerificationKey, data: [u8; 768], pubs: [u8; 32]) -> bool {
         let proof = Proof::try_from(&data).unwrap();
-        let pubs = pubs.into();
+        let pubs = pubs.try_into().unwrap();
 
         verify(&vk, &proof, &pubs).is_ok()
     }

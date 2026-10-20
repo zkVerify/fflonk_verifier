@@ -49,7 +49,9 @@ fn should_verify_valid_proof() {
         "#
     );
     let proof = Proof::try_from(&data).unwrap();
-    let pubs = hex!("0d69b94acdfaca5bacc248a60b35b925a2374644ce0c1205db68228c8921d9d9").into();
+    let pubs = hex!("0d69b94acdfaca5bacc248a60b35b925a2374644ce0c1205db68228c8921d9d9")
+        .try_into()
+        .unwrap();
 
     verify(&key.into(), &proof, &pubs).unwrap();
 }
@@ -142,8 +144,9 @@ fn should_verify_snarkjs_proof() {
         "#,
     )
     .unwrap();
-    let pubs: Public =
-        hex!("110d778eaf8b8ef7ac10f8ac239a14df0eb292a8d1b71340d527b26301a9ab08").into();
+    let pubs: Public = hex!("110d778eaf8b8ef7ac10f8ac239a14df0eb292a8d1b71340d527b26301a9ab08")
+        .try_into()
+        .unwrap();
 
     verify(&vk, &proof, &pubs).unwrap()
 }
