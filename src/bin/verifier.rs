@@ -66,5 +66,7 @@ pub fn main() -> Result<()> {
 fn parse_pubs(pubs: &str) -> Result<Public> {
     ethnum::U256::from_str_prefixed(pubs)
         .with_context(|| format!("Invalid 256 string"))
-        .map(|u256| Public::from(U256([u256.0[0], u256.0[1]])))
+        .and_then(|u256| {
+            Public::try_from(U256([u256.0[0], u256.0[1]])).context("Invalid public input")
+        })
 }

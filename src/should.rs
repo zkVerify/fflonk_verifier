@@ -59,7 +59,7 @@ const VALID_PUBS: ethnum::U256 =
 
 #[fixture]
 fn valid_pubs() -> Public {
-    VALID_PUBS.into_u256().into()
+    VALID_PUBS.into_u256().try_into().unwrap()
 }
 
 #[fixture]
@@ -100,15 +100,15 @@ fn verify_valid_proof(vk: VerificationKey, valid_proof: Proof, valid_pubs: Publi
 }
 
 #[rstest]
-fn accept_the_largest_canonical_public_input(vk: VerificationKey, valid_proof: Proof) {
-    // `r - 1` is a valid field element: it must pass the canonical check and only fail later,
-    // because the proof was not generated for this input.
-    let result = verify(&vk, &valid_proof, &(FR_MODULUS - 1).into_u256().into());
+#[case::zero(U256::zero())]
+#[case::largest_canonical((FR_MODULUS - 1).into_u256())]
+fn accept_a_canonical_public_input(#[case] pubs: U256) {
+    let mut bytes = [0u8; 32];
+    pubs.to_big_endian(&mut bytes).unwrap();
 
-    assert!(
-        !matches!(result, Err(VerifyError::InvalidPublicInput)),
-        "unexpected result: {result:?}"
-    );
+    assert_eq!(Public::try_from(pubs).unwrap().0, pubs);
+    assert_eq!(Public::try_from(bytes).unwrap().0, pubs);
+    assert_eq!(Public::try_from(&bytes[..]).unwrap().0, pubs);
 }
 
 #[cfg(feature = "std")]
@@ -135,7 +135,8 @@ mod verify_valid_deserialized_proof {
             .unwrap();
         let pubs: Public = <[u8; 32]>::try_from(hex::decode(pubs).unwrap())
             .unwrap()
-            .into();
+            .try_into()
+            .unwrap();
         verify(&vk, &proof, &pubs).unwrap()
     }
 }
@@ -314,11 +315,7 @@ mod reject {
         verify(
             &vk,
             &valid_proof,
-            &U256::random(
-                &mut rng,
-                &u256!("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
-            )
-            .into(),
+            &Fr::random(&mut rng).into_u256().try_into().unwrap(),
         )
         .unwrap();
     }
@@ -340,10 +337,33 @@ mod reject {
     #[case::valid_pubs_plus_r((VALID_PUBS + FR_MODULUS).into_u256())]
     #[case::r(FR_MODULUS.into_u256())]
     #[case::max(ethnum::U256::MAX.into_u256())]
-    #[should_panic(expected = "InvalidPublicInput")]
-    fn a_non_canonical_public_input(valid_proof: Proof, #[case] pubs: U256) {
-        let vk = VerificationKey::default();
+    fn a_non_canonical_public_input(#[case] pubs: U256) {
+        let mut bytes = [0u8; 32];
+        pubs.to_big_endian(&mut bytes).unwrap();
 
-        verify(&vk, &valid_proof, &pubs.into()).unwrap()
+        assert_eq!(
+            Public::try_from(pubs).err(),
+            Some(PublicInputError::NotCanonical)
+        );
+        assert_eq!(
+            Public::try_from(bytes).err(),
+            Some(PublicInputError::NotCanonical)
+        );
+        assert_eq!(
+            Public::try_from(&bytes[..]).err(),
+            Some(PublicInputError::NotCanonical)
+        );
+    }
+
+    #[rstest]
+    #[case::too_short(31)]
+    #[case::too_long(33)]
+    fn a_public_input_with_wrong_length(#[case] len: usize) {
+        let bytes = [0u8; 33];
+
+        assert_eq!(
+            Public::try_from(&bytes[..len]).err(),
+            Some(PublicInputError::InvalidLength)
+        );
     }
 }

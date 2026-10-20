@@ -41,26 +41,50 @@ pub use proof::ProofData;
 /// The proof data as fixed size bytes array.
 pub use proof::ProofRawData;
 
-/// The public input data.
+/// The public input data: always a canonical `Fr` element (< r).
 pub struct Public(U256);
 
-impl From<U256> for Public {
-    fn from(inner: U256) -> Self {
-        Self(inner)
+/// Public input conversion error
+#[derive(Snafu, Debug, PartialEq, Eq)]
+pub enum PublicInputError {
+    /// The public input is not 32 bytes long
+    #[snafu(display("Public input must be 32 bytes long"))]
+    InvalidLength,
+    /// The public input is not a canonical field element (>= r)
+    #[snafu(display("Public input is not a canonical field element"))]
+    NotCanonical,
+}
+
+impl TryFrom<U256> for Public {
+    type Error = PublicInputError;
+
+    // The raw public input is hashed into `beta`, while `compute_pi` reduces it mod r. Accepting
+    // `v + k*r` would give one field element several valid encodings, so reject it here, as
+    // `read_fr` already does for proof scalars.
+    fn try_from(inner: U256) -> Result<Self, Self::Error> {
+        Fr::new(inner)
+            .map(|_| Self(inner))
+            .ok_or(PublicInputError::NotCanonical)
     }
 }
 
-impl From<[u8; 32]> for Public {
-    fn from(inner: [u8; 32]) -> Self {
-        Self(U256::from_slice(&inner).expect("Cannot fails: is a 32-byte array"))
+impl TryFrom<[u8; 32]> for Public {
+    type Error = PublicInputError;
+
+    fn try_from(inner: [u8; 32]) -> Result<Self, Self::Error> {
+        U256::from_slice(&inner)
+            .expect("Cannot fails: is a 32-byte array")
+            .try_into()
     }
 }
 
 impl TryFrom<&[u8]> for Public {
-    type Error = core::array::TryFromSliceError;
+    type Error = PublicInputError;
 
     fn try_from(inner: &[u8]) -> Result<Self, Self::Error> {
-        <[u8; 32]>::try_from(inner).map(Into::into)
+        <[u8; 32]>::try_from(inner)
+            .map_err(|_| PublicInputError::InvalidLength)?
+            .try_into()
     }
 }
 
@@ -75,23 +99,13 @@ pub enum VerifyError {
     /// Cannot verify the pairing for this proof
     #[snafu(display("Cannot verify paring"))]
     NotPairing,
-    /// The public input is not a canonical field element (>= r)
-    #[snafu(display("Public input is not a canonical field element"))]
-    InvalidPublicInput,
 }
 
 /// Use the given verification key `vk` to verify the `proof`` against the given `pubs` public inputs.
 /// Can fail if:
-/// - the public input is not a canonical field element
 /// - the provided inverse in the proof is wrong
 /// - the pair checking is wrong
 pub fn verify(vk: &VerificationKey, proof: &Proof, pubs: &Public) -> Result<(), VerifyError> {
-    // The raw public input is hashed into `beta`, while `compute_pi` reduces it mod r. Accepting
-    // `v + k*r` would give one field element several valid encodings, so reject it here, as
-    // `read_fr` already does for proof scalars.
-    if Fr::new(pubs.0).is_none() {
-        return Err(VerifyError::InvalidPublicInput);
-    }
     let vk_data = vk.into();
     let challenges = Challenges::build(&vk_data, proof, pubs);
     let (inverse, l1) = challenges.compute_inverse(&vk_data, proof.evaluations.inv)?;
@@ -608,7 +622,7 @@ impl Challenges {
 
 impl FFlonkConstants for Challenges {}
 
-/// The BN254 scalar field order `r` (the modulus of `Fr`): the smallest non-canonical value.
+/// The BN254 scalar field order `r` (the modulus of `Fr`)
 #[cfg(test)]
 pub(crate) const FR_MODULUS: ethnum::U256 =
     ethnum::uint!("0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001");
