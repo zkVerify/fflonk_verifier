@@ -18,6 +18,7 @@ use rand::Rng;
 use rstest::{fixture, rstest};
 
 use crate::macros::u256s;
+use crate::utils::IntoU256 as _;
 
 use super::*;
 
@@ -53,9 +54,12 @@ fn valid_proof() -> Proof {
     .unwrap()
 }
 
+const VALID_PUBS: ethnum::U256 =
+    ethnum::uint!("0x0d69b94acdfaca5bacc248a60b35b925a2374644ce0c1205db68228c8921d9d9");
+
 #[fixture]
 fn valid_pubs() -> Public {
-    u256!("0d69b94acdfaca5bacc248a60b35b925a2374644ce0c1205db68228c8921d9d9").into()
+    VALID_PUBS.into_u256().into()
 }
 
 #[fixture]
@@ -93,6 +97,18 @@ fn compute_valid_check_paring(vk: VerificationKey, valid_proof: Proof, valid_pub
 #[rstest]
 fn verify_valid_proof(vk: VerificationKey, valid_proof: Proof, valid_pubs: Public) {
     assert!(verify(&vk, &valid_proof, &valid_pubs).is_ok())
+}
+
+#[rstest]
+fn accept_the_largest_canonical_public_input(vk: VerificationKey, valid_proof: Proof) {
+    // `r - 1` is a valid field element: it must pass the canonical check and only fail later,
+    // because the proof was not generated for this input.
+    let result = verify(&vk, &valid_proof, &(FR_MODULUS - 1).into_u256().into());
+
+    assert!(
+        !matches!(result, Err(VerifyError::InvalidPublicInput)),
+        "unexpected result: {result:?}"
+    );
 }
 
 #[cfg(feature = "std")]
@@ -321,11 +337,9 @@ mod reject {
     }
 
     #[rstest]
-    #[case::valid_pubs_plus_r(u256!(
-        "3dce07bdaf2c6a8565128e5c8cb71182ca6b2e8d47c582971f4a18207921d9da"
-    ))]
-    #[case::r(u256!("30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001"))]
-    #[case::max(u256!("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"))]
+    #[case::valid_pubs_plus_r((VALID_PUBS + FR_MODULUS).into_u256())]
+    #[case::r(FR_MODULUS.into_u256())]
+    #[case::max(ethnum::U256::MAX.into_u256())]
     #[should_panic(expected = "InvalidPublicInput")]
     fn a_non_canonical_public_input(valid_proof: Proof, #[case] pubs: U256) {
         let vk = VerificationKey::default();

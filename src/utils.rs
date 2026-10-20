@@ -77,6 +77,14 @@ impl IntoU256 for [u8; 32] {
     }
 }
 
+#[cfg(test)]
+impl IntoU256 for ethnum::U256 {
+    fn into_u256(self) -> U256 {
+        let (hi, lo) = self.into_words();
+        U256([lo, hi])
+    }
+}
+
 pub(crate) trait IntoBytes {
     fn into_bytes(self) -> [u8; 32];
 }

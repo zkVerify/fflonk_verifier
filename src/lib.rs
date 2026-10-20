@@ -608,5 +608,10 @@ impl Challenges {
 
 impl FFlonkConstants for Challenges {}
 
+/// The BN254 scalar field order `r` (the modulus of `Fr`): the smallest non-canonical value.
+#[cfg(test)]
+pub(crate) const FR_MODULUS: ethnum::U256 =
+    ethnum::uint!("0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001");
+
 #[cfg(test)]
 mod should;
